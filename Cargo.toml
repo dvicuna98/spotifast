@@ -91,9 +91,12 @@ librespot-protocol = { version = "0.8", default-features = false }
 # game. librespot-audio comes from the same fork as the rest through
 # [patch.crates-io]; spotsurf-core carries the handoff format both sides read.
 librespot-audio = { version = "0.8", default-features = false }
-spotsurf-core = { path = "../SpotSurf/crates/spotsurf-core" }
+# SpotSurf's own crates, from its repository. Developing both at once, a
+# [patch] in a Cargo config above both checkouts points these at a SpotSurf
+# checkout beside this one instead; see SpotSurf's README.
+spotsurf-core = { git = "ssh://git@github.com/dvicuna98/spotsurf.git", branch = "main" }
 # SpotSurf's connector: finding, starting and following the game.
-spotsurf-connector = { path = "../SpotSurf/crates/spotsurf-connector" }
+spotsurf-connector = { git = "ssh://git@github.com/dvicuna98/spotsurf.git", branch = "main" }
 # Parses the rootlist's playlist4 protobuf, the same crate librespot generates with.
 protobuf = "3"
 # Local playback's audio sink is this crate's own (src/sink.rs): librespot's
@@ -185,8 +188,8 @@ polib = "0.3"
 # Run connection-deadline regressions with a virtual clock.
 tokio = { version = "1", features = ["test-util"] }
 # SpotSurf: building a game map from a whole track (examples/spotsurf_probe.rs).
-spotsurf-analysis = { path = "../SpotSurf/crates/spotsurf-analysis" }
-spotsurf-game = { path = "../SpotSurf/crates/spotsurf-game" }
+spotsurf-analysis = { git = "ssh://git@github.com/dvicuna98/spotsurf.git", branch = "main" }
+spotsurf-game = { git = "ssh://git@github.com/dvicuna98/spotsurf.git", branch = "main" }
 
 # The icon and version information Windows shows for the executable.
 [target.'cfg(windows)'.build-dependencies]
