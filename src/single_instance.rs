@@ -58,6 +58,8 @@ pub enum ControlCommand {
     Show,
     /// Re-read local palette files without showing the window or restarting audio.
     ReloadThemes,
+    /// Start SpotSurf on the playing song, or close it: the game button.
+    SpotSurf,
     PlayPause,
     Play,
     Pause,
@@ -313,6 +315,7 @@ fn parse(line: &str) -> Option<Request> {
     let command = match (verb, argument) {
         ("show", None) => ControlCommand::Show,
         ("reload-themes", None) => ControlCommand::ReloadThemes,
+        ("spotsurf", None) => ControlCommand::SpotSurf,
         ("playpause", None) => ControlCommand::PlayPause,
         ("play", None) => ControlCommand::Play,
         ("pause", None) => ControlCommand::Pause,

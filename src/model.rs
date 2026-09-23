@@ -986,6 +986,9 @@ pub enum Action {
     ToggleSidebar,
     ToggleQueuePanel,
     ToggleLyricsPanel,
+    /// The player bar's game button: play the song as a SpotSurf level now,
+    /// or as soon as it is ready.
+    PlaySpotSurf,
     SetLyricsFullscreen(bool),
     LyricsLineShown(Option<usize>),
     FollowLyrics,

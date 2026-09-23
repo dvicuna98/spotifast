@@ -181,6 +181,8 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
             }
             ui.spacing_mut().item_spacing = vec2(8.0, 6.0);
             topbar::show(app, ui);
+            // What is left below the top bar is where a running game sits.
+            app.central_area = Some(ui.available_rect_before_wrap());
             let page = app.page().clone();
             crate::autoscroll::show(
                 ui,

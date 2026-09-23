@@ -28,6 +28,10 @@ use crate::theme::{self, Palette};
 use crate::tray::{TrayCommand, TrayService};
 use crate::util;
 
+/// Whether to offer Spotifast's own releases as updates. Not in the build that
+/// comes with SpotSurf: its installer updates it, and Spotifast's releases
+/// would replace it with a build without the game.
+const UPSTREAM_UPDATES: bool = false;
 const REMOTE_POLL_ACTIVE: Duration = Duration::from_secs(4);
 const REMOTE_POLL_IDLE: Duration = Duration::from_secs(20);
 const REMOTE_FRESH: Duration = Duration::from_secs(45);
@@ -370,6 +374,19 @@ pub struct App {
     lyrics_restore_maximized: bool,
     pub lyrics_backdrop: crate::images::LyricsBackdrop,
     pub softened_covers: crate::images::SoftenedCovers,
+    /// SpotSurf: whether the game is installed where it is looked for, how
+    /// far the playing song's level has got, and whether the game button was
+    /// pressed before it was ready, so the game starts the moment it is.
+    pub spotsurf_installed: bool,
+    pub spotsurf: crate::spotsurf::Stage,
+    pub spotsurf_launch_pending: bool,
+    /// SpotSurf: the running game, while there is one.
+    pub spotsurf_game: Option<crate::spotsurf::Playing>,
+    /// The main window's native handle, for the game to sit inside.
+    pub window_handle: Option<u64>,
+    /// The central area below the top bar, in points, as last drawn: where
+    /// the running game sits.
+    pub central_area: Option<egui::Rect>,
     /// The track the lyrics below are for.
     pub lyrics_uri: Option<String>,
     /// `Loaded(None)` when no lyrics are available.
@@ -748,6 +765,12 @@ impl App {
             lyrics_restore_maximized: false,
             lyrics_backdrop: Default::default(),
             softened_covers: Default::default(),
+            spotsurf_installed: crate::spotsurf::Game::find().is_some(),
+            spotsurf: crate::spotsurf::Stage::Idle,
+            spotsurf_launch_pending: false,
+            spotsurf_game: None,
+            window_handle: None,
+            central_area: None,
             lyrics_uri: None,
             lyrics: Loadable::NotLoaded,
             lyrics_following: true,
@@ -1783,6 +1806,27 @@ impl App {
                         };
                     }
                 }
+                Event::SpotSurf(stage) => {
+                    // Only news about the song the button is showing counts.
+                    if stage.uri().is_some() && stage.uri() == self.spotsurf.uri() {
+                        self.spotsurf = stage;
+                        match &self.spotsurf {
+                            crate::spotsurf::Stage::Ready { uri }
+                                if self.spotsurf_launch_pending =>
+                            {
+                                let uri = uri.clone();
+                                self.launch_spotsurf(uri);
+                            }
+                            crate::spotsurf::Stage::Failed { .. } => {
+                                self.spotsurf_launch_pending = false;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                Event::SpotSurfReport(report) => self.on_spotsurf_report(report),
+                // The music carries on out loud from where the game left it.
+                Event::SpotSurfClosed => self.spotsurf_game = None,
                 Event::PlaylistCache {
                     account_id,
                     id,
@@ -2489,6 +2533,7 @@ impl App {
         {
             self.backend.api(ApiRequest::Track { id: id.clone() });
         }
+        self.spotsurf_follow(&now);
         self.request_contains(vec![now.uri.clone()]);
         if let Some(url) = now.art_small.or(now.art_url) {
             self.tint_for(Some(&url));
@@ -2501,6 +2546,215 @@ impl App {
         }
         if self.show_lyrics_panel {
             self.request_lyrics();
+        }
+        self.request_spotsurf();
+    }
+
+    /// Starts getting the playing song ready as a SpotSurf level, unless it
+    /// is ready or on the way. Podcasts, and everything when SpotSurf is not
+    /// installed or Spotifast is offline, leave the game button idle.
+    pub fn request_spotsurf(&mut self) {
+        use crate::spotsurf::{Stage, playable};
+        let Some(now) = self.now_playing() else {
+            self.spotsurf = Stage::Idle;
+            self.spotsurf_launch_pending = false;
+            return;
+        };
+        if !self.spotsurf_installed || self.offline || now.is_episode || !playable(&now.uri) {
+            self.spotsurf = Stage::Idle;
+            self.spotsurf_launch_pending = false;
+            return;
+        }
+        if self.spotsurf.uri() == Some(now.uri.as_str())
+            && !matches!(self.spotsurf, Stage::Failed { .. })
+        {
+            return;
+        }
+        // A press meant for the song before does not carry over.
+        self.spotsurf_launch_pending = false;
+        self.spotsurf = Stage::Loading {
+            uri: now.uri.clone(),
+        };
+        self.backend.send(Command::SpotSurfPrepare { uri: now.uri });
+    }
+
+    /// The game button. Ready: play now. Still loading: play as soon as it is
+    /// ready, or, pressed again, don't. Failed or idle: try again, and play
+    /// when that succeeds.
+    fn play_spotsurf(&mut self) {
+        use crate::spotsurf::Stage;
+        // Pressed while the game runs: close it.
+        if self.spotsurf_game.is_some() {
+            self.backend
+                .send(Command::SpotSurfTell(spotsurf_core::link::Message::Quit));
+            return;
+        }
+        match self.spotsurf.clone() {
+            Stage::Ready { uri } => self.launch_spotsurf(uri),
+            Stage::Loading { .. } => {
+                self.spotsurf_launch_pending = !self.spotsurf_launch_pending;
+            }
+            Stage::Failed { .. } | Stage::Idle => {
+                self.spotsurf = Stage::Idle;
+                self.request_spotsurf();
+                self.spotsurf_launch_pending = matches!(self.spotsurf, Stage::Loading { .. });
+            }
+        }
+    }
+
+    /// Pause the music, which the game is about to play from the top, and
+    /// start the game. The player stays on the song, silenced, and follows
+    /// the game from here on.
+    fn launch_spotsurf(&mut self, uri: String) {
+        self.spotsurf_launch_pending = false;
+        if self.spotsurf_game.is_none() {
+            self.spotsurf_game = Some(crate::spotsurf::Playing::default());
+            self.spotsurf_play_local(false);
+            self.seek(0);
+        }
+        self.backend.send(Command::SpotSurfLaunch { uri });
+    }
+
+    /// Play or pause the app's own player, unless it already is.
+    fn spotsurf_play_local(&mut self, play: bool) {
+        if self.now_playing().is_some_and(|now| now.playing != play) {
+            self.toggle_play();
+        }
+    }
+
+    /// Bring the app's player to where the game is, `position_s` into the
+    /// song both are on, and playing or not as the game is. It is silenced,
+    /// so a jump is never heard; it only keeps the bar honest.
+    fn spotsurf_catch_up(&mut self, position_s: f32, play: bool) {
+        const TOLERANCE_MS: i64 = 300;
+        let Some(now) = self.now_playing() else {
+            return;
+        };
+        let game = (position_s.max(0.0) * 1000.0) as u32;
+        if (i64::from(now.position_ms) - i64::from(game)).abs() > TOLERANCE_MS {
+            self.seek(game);
+        }
+        self.spotsurf_play_local(play);
+    }
+
+    /// What the running game said.
+    fn on_spotsurf_report(&mut self, report: spotsurf_core::link::Report) {
+        use spotsurf_core::link::Report;
+        // How far the app's player may wander from the game before it is
+        // pulled back.
+        const DRIFT_MS: i64 = 1500;
+        let Some(game) = self.spotsurf_game.as_mut() else {
+            return;
+        };
+        if let Report::Playing { uri, .. } = &report {
+            game.game_moved_to(uri.clone());
+        }
+        let song = game.song.clone();
+        let Some(now) = self.now_playing() else {
+            return;
+        };
+        // While the two are on different songs, the app's player is about to
+        // move on too; there is nothing to line up yet.
+        let together = song.as_deref() == Some(now.uri.as_str());
+        match report {
+            Report::Playing { position_s, .. } => {
+                if together {
+                    self.spotsurf_catch_up(position_s, true);
+                }
+                self.refresh_queue(true);
+            }
+            Report::Resumed { position_s } if together => {
+                self.spotsurf_catch_up(position_s, true);
+            }
+            Report::Paused { position_s } if together => {
+                self.spotsurf_catch_up(position_s, false);
+            }
+            Report::Paused { .. } => self.spotsurf_play_local(false),
+            Report::Position { position_s } if together => {
+                let game = (position_s.max(0.0) * 1000.0) as i64;
+                if (i64::from(now.position_ms) - game).abs() > DRIFT_MS {
+                    self.seek(game as u32);
+                }
+            }
+            // Ended: the app's player moves on by itself, and the game
+            // follows it. Closing: the link closing says it all.
+            _ => {}
+        }
+    }
+
+    /// The app's player moved on to `now` while the game runs: have the game
+    /// go there too, straight away when it has the song queued, or loading
+    /// it. The app's player waits for the game to start it.
+    fn spotsurf_follow(&mut self, now: &NowPlaying) {
+        use crate::spotsurf::{Follow, playable};
+        use spotsurf_core::link::Message;
+        let Some(game) = self.spotsurf_game.as_mut() else {
+            return;
+        };
+        if now.is_episode || !playable(&now.uri) {
+            // Nothing the game can play: it steps aside.
+            self.backend.send(Command::SpotSurfTell(Message::Quit));
+            return;
+        }
+        match game.app_moved_to(&now.uri) {
+            Follow::Nothing => return,
+            Follow::Skip => self.backend.send(Command::SpotSurfTell(Message::Skip)),
+            Follow::Load => {
+                self.backend.send(Command::SpotSurfTell(Message::Loading {
+                    title: now.title.clone(),
+                    artist: now.subtitle.clone(),
+                }));
+                self.backend.send(Command::SpotSurfPlay {
+                    uri: now.uri.clone(),
+                });
+            }
+        }
+        self.spotsurf_play_local(false);
+    }
+
+    /// Every frame while the game runs: keep its window over the central
+    /// area, and hand it the song after this one before this one ends.
+    fn sync_spotsurf(&mut self, ctx: &egui::Context) {
+        let next = match (&self.queue, self.now_playing()) {
+            (Loadable::Loaded(queue), Some(now)) => queue
+                .queue
+                .first()
+                .map(|item| item.uri().to_string())
+                .filter(|next| crate::spotsurf::playable(next))
+                .map(|next| (now.uri, next)),
+            _ => None,
+        };
+        let place = self
+            .window_handle
+            .zip(self.central_area)
+            .map(|(parent, area)| {
+                let scale = ctx.pixels_per_point();
+                let area = [area.min.x, area.min.y, area.width(), area.height()]
+                    .map(|value| (value * scale).round() as i32);
+                (parent, area)
+            });
+        let Some(game) = self.spotsurf_game.as_mut() else {
+            return;
+        };
+        if let Some(place) = place
+            && game.placed != Some(place)
+        {
+            game.placed = Some(place);
+            let (parent, [x, y, width, height]) = place;
+            self.backend
+                .send(Command::SpotSurfTell(spotsurf_core::link::Message::Place {
+                    parent,
+                    x,
+                    y,
+                    width: width.max(1) as u32,
+                    height: height.max(1) as u32,
+                }));
+        }
+        if let Some((song, next)) = next
+            && game.should_queue(&song, &next)
+        {
+            game.queued = Some(next.clone());
+            self.backend.send(Command::SpotSurfQueue { uri: next });
         }
     }
 
@@ -2578,7 +2832,8 @@ impl App {
             .retain(|toast| toast.created.elapsed() < TOAST_LIFETIME);
         self.maybe_suggest_personal_app();
 
-        if self.settings.check_for_updates
+        if UPSTREAM_UPDATES
+            && self.settings.check_for_updates
             && !self.offline
             && self
                 .last_update_check
@@ -3063,6 +3318,7 @@ impl App {
             let action = match command {
                 ControlCommand::Show => Some(Action::ShowWindow),
                 ControlCommand::ReloadThemes => Some(Action::ReloadThemes),
+                ControlCommand::SpotSurf => Some(Action::PlaySpotSurf),
                 ControlCommand::PlayPause => Some(Action::TogglePlay),
                 ControlCommand::Play => (!playing).then_some(Action::TogglePlay),
                 ControlCommand::Pause => playing.then_some(Action::TogglePlay),
@@ -7503,11 +7759,24 @@ impl App {
                 // which every shuffled play goes through.
                 self.play_request(PlayRequest::context(uri), true);
             }
+            Action::TogglePlay if self.spotsurf_game.is_some() => {
+                // The game leads: it pauses, or counts back in, and the
+                // player follows what it reports.
+                let playing = self.now_playing().is_some_and(|now| now.playing);
+                self.backend.send(Command::SpotSurfTell(if playing {
+                    spotsurf_core::link::Message::Pause
+                } else {
+                    spotsurf_core::link::Message::Resume
+                }));
+            }
             Action::TogglePlay => self.toggle_play(),
             Action::Next if self.resume_only() => {
                 self.step_resume(true);
             }
             Action::Next => {
+                if let Some(game) = &mut self.spotsurf_game {
+                    game.skipping = true;
+                }
                 // Move the queue head to the playing row immediately. Do not
                 // pop when there is no active playback target.
                 let target = self.target();
@@ -7530,6 +7799,9 @@ impl App {
                 }
             }
             Action::Previous => {
+                if let Some(game) = &mut self.spotsurf_game {
+                    game.skipping = true;
+                }
                 // Next names its expected destination so the row moves before
                 // the engine does. Previous has no forward queue row to name;
                 // discard that expectation or a quick Next, Previous leaves
@@ -7989,6 +8261,7 @@ impl App {
                     self.refresh_queue(true);
                 }
             }
+            Action::PlaySpotSurf => self.play_spotsurf(),
             Action::ToggleLyricsPanel => {
                 self.leave_lyrics_fullscreen(ctx);
                 self.show_lyrics_panel = !self.show_lyrics_panel;
@@ -8048,6 +8321,9 @@ impl App {
                     // Web API, so look for them ourselves.
                     self.backend.send(Command::DiscoverReceivers);
                 }
+            }
+            Action::CheckForUpdates if !UPSTREAM_UPDATES => {
+                self.toast("Updates come with SpotSurf's installer");
             }
             Action::CheckForUpdates => self.check_for_updates(true),
             Action::ShowUpdate => {
@@ -8647,6 +8923,7 @@ impl App {
         #[cfg(feature = "milkdrop")]
         self.sync_milkdrop(ctx);
         self.apply_actions(ctx);
+        self.sync_spotsurf(ctx);
         self.sync_media_controls(ctx);
         self.sync_window_title(ctx);
     }
@@ -8753,12 +9030,14 @@ impl App {
         if self.settings.winamp_window && needs_sign_in && !self.switch_intent {
             self.actions.push(Action::ToggleWinampWindow);
         }
+        self.central_area = None;
         if self.settings.winamp_window {
             crate::ui::winamp::show(self, ui);
         } else {
             crate::ui::show(self, ui);
         }
         self.apply_actions(ctx);
+        self.sync_spotsurf(ctx);
         let autoscroll = self.autoscroll.finish(ctx, true);
         if autoscroll.scrolling {
             self.glide = None;

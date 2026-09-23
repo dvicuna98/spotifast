@@ -623,6 +623,96 @@ fn extras(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>) {
     {
         app.actions.push(Action::ToggleLyricsPanel);
     }
+    if app.spotsurf_installed {
+        game_button(app, ui);
+    }
+}
+
+/// SpotSurf's button: a gamepad. While the song is being got ready a ring
+/// spins round it — in the accent once pressed, so it is plain the game will
+/// start by itself — and once the level is ready the gamepad lights up.
+fn game_button(app: &mut App, ui: &mut egui::Ui) {
+    use crate::spotsurf::Stage;
+
+    const SIZE: f32 = 18.0;
+    let palette = app.palette;
+    let pending = app.spotsurf_launch_pending;
+    let (tooltip, colour, spinning) = match &app.spotsurf {
+        Stage::Idle => (
+            gettext(app.locale, "SpotSurf: play a song to make a level").to_string(),
+            palette.secondary,
+            false,
+        ),
+        Stage::Loading { .. } if pending => (
+            gettext(app.locale, "SpotSurf starts as soon as the level is ready").to_string(),
+            palette.accent,
+            true,
+        ),
+        Stage::Loading { .. } => (
+            gettext(app.locale, "SpotSurf: getting the level ready").to_string(),
+            palette.secondary,
+            true,
+        ),
+        Stage::Ready { .. } => (
+            gettext(app.locale, "Play in SpotSurf").to_string(),
+            palette.accent,
+            false,
+        ),
+        Stage::Failed { reason, .. } => (
+            format!(
+                "{} {reason}",
+                gettext(app.locale, "SpotSurf could not get this song:")
+            ),
+            palette.secondary,
+            false,
+        ),
+    };
+
+    let edge = SIZE + 12.0;
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(edge), Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &tooltip)
+    });
+    if ui.is_rect_visible(rect) {
+        let tint = if response.hovered() || response.has_focus() {
+            palette.text
+        } else {
+            colour
+        };
+        let scale = if response.is_pointer_button_down_on() {
+            0.92
+        } else {
+            1.0
+        };
+        // Smaller while the ring is round it, so the two do not touch.
+        let icon = if spinning { SIZE * 0.8 } else { SIZE } * scale;
+        theme::paint_icon(ui, Icon::Gamepad, rect, icon, tint);
+        if spinning {
+            paint_loading_ring(ui, rect, if pending { palette.accent } else { colour });
+        }
+    }
+    theme::focus_ring(ui, &response);
+    if response.on_hover_text(tooltip).clicked() {
+        app.actions.push(Action::PlaySpotSurf);
+    }
+}
+
+/// A short arc chasing round the edge of `rect`, like the app's own spinner.
+fn paint_loading_ring(ui: &egui::Ui, rect: Rect, colour: Color32) {
+    ui.ctx()
+        .request_repaint_after(std::time::Duration::from_millis(33));
+    let radius = rect.width() / 2.0 - 1.5;
+    let start = ui.input(|input| input.time) * std::f64::consts::TAU * 1.1;
+    let sweep = 110_f64.to_radians();
+    let points = (0..16)
+        .map(|index| {
+            let angle = start + sweep * f64::from(index) / 15.0;
+            let (sin, cos) = angle.sin_cos();
+            rect.center() + radius * vec2(cos as f32, sin as f32)
+        })
+        .collect();
+    ui.painter()
+        .add(egui::Shape::line(points, egui::Stroke::new(2.0, colour)));
 }
 
 #[cfg(test)]

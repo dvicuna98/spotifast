@@ -65,6 +65,8 @@ pub struct AudioControl {
     target: Mutex<AudioTarget>,
     waiting_for_track: AtomicBool,
     reset_output: AtomicBool,
+    /// SpotSurf is playing the song instead: keep time, make no sound.
+    silenced: AtomicBool,
     buffer_ms: u32,
 }
 
@@ -80,8 +82,20 @@ impl AudioControl {
             target: Mutex::new(AudioTarget::default()),
             waiting_for_track: AtomicBool::new(false),
             reset_output: AtomicBool::new(false),
+            silenced: AtomicBool::new(false),
             buffer_ms: buffer_ms.clamp(*BUFFER_MS_RANGE.start(), *BUFFER_MS_RANGE.end()),
         })
+    }
+
+    /// Silence local output while SpotSurf plays the song itself. Playback
+    /// carries on at its own pace underneath, so the player bar keeps showing
+    /// the song and its progress as the game plays it.
+    pub fn set_silenced(&self, silenced: bool) {
+        self.silenced.store(silenced, Ordering::SeqCst);
+    }
+
+    fn silenced(&self) -> bool {
+        self.silenced.load(Ordering::SeqCst)
     }
 
     /// Follows confirmed decoder transitions, including seeks requested by
@@ -542,7 +556,7 @@ impl Sink for RodioSink {
         let samples = packet
             .samples()
             .map_err(|error| SinkError::OnWrite(error.to_string()))?;
-        if self.control.waiting_for_track() {
+        if self.control.waiting_for_track() || self.control.silenced() {
             // Muting must not remove decoder backpressure. Otherwise cached
             // audio races to EndOfTrack while Connect is still handling the
             // replacement load, and that old event can skip the chosen song.

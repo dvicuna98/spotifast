@@ -47,6 +47,7 @@ pub mod settings;
 pub mod single_instance;
 pub mod sink;
 pub mod skin;
+pub mod spotsurf;
 pub mod system_fonts;
 pub mod theme;
 pub mod thumbbar;

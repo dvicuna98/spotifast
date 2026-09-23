@@ -148,6 +148,8 @@ enum Control {
     Show,
     /// Reload local palette files without starting the app or interrupting playback
     ReloadThemes,
+    /// Start SpotSurf on the playing song, or close it
+    Spotsurf,
 }
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
@@ -210,6 +212,7 @@ fn run_control(control: Control) -> i32 {
         Control::NowPlaying { .. } => "nowplaying".to_owned(),
         Control::Show => "show".to_owned(),
         Control::ReloadThemes => "reload-themes".to_owned(),
+        Control::Spotsurf => "spotsurf".to_owned(),
     };
     match single_instance::send(&verb) {
         Ok(single_instance::Reply::Ok) => 0,
@@ -1213,8 +1216,24 @@ impl eframe::App for Shell {
         self.persist_memory
     }
 
-    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         if let Some(app) = self.app.as_mut() {
+            // The game sits inside this window; switching window styles
+            // replaces it, so look again every frame.
+            #[cfg(windows)]
+            {
+                use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                app.window_handle =
+                    frame
+                        .window_handle()
+                        .ok()
+                        .and_then(|handle| match handle.as_raw() {
+                            RawWindowHandle::Win32(window) => Some(window.hwnd.get() as u64),
+                            _ => None,
+                        });
+            }
+            #[cfg(not(windows))]
+            let _ = frame;
             #[cfg(target_os = "macos")]
             for command in spotifast::mac_menu::drain_commands() {
                 use spotifast::mac_menu::MenuCommand;

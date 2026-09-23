@@ -527,6 +527,12 @@ impl Engine {
         &self.session
     }
 
+    /// Silence local output while SpotSurf plays the song; see
+    /// [`AudioControl::set_silenced`].
+    pub fn set_silenced(&self, silenced: bool) {
+        self.audio.set_silenced(silenced);
+    }
+
     pub fn shutdown(&self) {
         self.shutting_down
             .store(true, std::sync::atomic::Ordering::SeqCst);

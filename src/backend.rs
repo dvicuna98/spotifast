@@ -40,6 +40,9 @@ const ENGINE_CONNECT_TIMEOUT: Duration = Duration::from_secs(75);
 const MAX_PENDING_ALBUM_TYPES: usize = 50;
 // Saved shows asked about in one extended-metadata request.
 const AUDIOBOOK_BATCH: usize = 50;
+/// Songs SpotSurf keeps whole in memory: the one playing, the one queued after
+/// it, and the one before, for Previous. About 13 MB each.
+const SPOTSURF_HELD: usize = 3;
 pub const PLAYLIST_PAGE_SIZE: u32 = 50;
 const RECONNECT_WINDOW: Duration = Duration::from_secs(600);
 const RECONNECT_LIMIT: usize = 6;
@@ -670,6 +673,32 @@ pub enum Command {
         generation: u64,
     },
     StoreLikedSongsCache(crate::liked::Cache),
+    /// SpotSurf: fetch this song whole, ready to play as a game level.
+    SpotSurfPrepare {
+        uri: String,
+    },
+    /// Internal: a SpotSurf fetch finished.
+    SpotSurfPrepared {
+        uri: String,
+        result: Result<Arc<spotsurf_core::EncodedTrack>, String>,
+    },
+    /// SpotSurf: have the running game play this song now, fetching it first
+    /// if need be.
+    SpotSurfPlay {
+        uri: String,
+    },
+    /// SpotSurf: have the running game follow its current song with this one.
+    SpotSurfQueue {
+        uri: String,
+    },
+    /// SpotSurf: tell the running game something that carries no song.
+    SpotSurfTell(spotsurf_core::link::Message),
+    /// Internal: the game said something, or closed (`None`).
+    SpotSurfHeard(Option<spotsurf_core::link::Report>),
+    /// SpotSurf: start the game on this song, which must be prepared.
+    SpotSurfLaunch {
+        uri: String,
+    },
     /// Resolve the precise type of Web API singles through the streaming session.
     AlbumTypes(Vec<String>),
     /// Ask the streaming session which saved shows are audiobooks.
@@ -783,6 +812,12 @@ pub enum Event {
         generation: u64,
         cache: Option<crate::liked::Cache>,
     },
+    /// SpotSurf: where the game level for a song stands.
+    SpotSurf(crate::spotsurf::Stage),
+    /// SpotSurf: what the running game said.
+    SpotSurfReport(spotsurf_core::link::Report),
+    /// SpotSurf: the game has closed.
+    SpotSurfClosed,
 }
 
 /// The state of playback on this computer, independent of Web API sign-in.
@@ -1269,6 +1304,15 @@ struct Worker {
     /// does. The rootlist carries invitation edit permissions, which no
     /// other request reports.
     rootlist_pending: bool,
+    /// SpotSurf: the song the game button is about; songs fetched whole and
+    /// held in memory, newest last; songs on their way; the game while it
+    /// runs; and songs it was asked to play or queue that are still coming.
+    spotsurf_wanted: Option<String>,
+    spotsurf_tracks: Vec<(String, Arc<spotsurf_core::EncodedTrack>)>,
+    spotsurf_fetching: Vec<String>,
+    spotsurf_game: Option<crate::spotsurf::GameSession>,
+    spotsurf_play_next: Option<String>,
+    spotsurf_queue_next: Option<String>,
     album_type_lookup: AlbumTypeLookup,
     /// Saved shows waiting for the streaming session to say which are audiobooks.
     audiobook_lookup: BTreeSet<String>,
@@ -1333,6 +1377,12 @@ impl Worker {
             waker,
             engine: None,
             rootlist_pending: false,
+            spotsurf_wanted: None,
+            spotsurf_tracks: Vec::new(),
+            spotsurf_fetching: Vec::new(),
+            spotsurf_game: None,
+            spotsurf_play_next: None,
+            spotsurf_queue_next: None,
             album_type_lookup: AlbumTypeLookup::default(),
             audiobook_lookup: BTreeSet::new(),
             engine_busy: false,
@@ -1797,6 +1847,19 @@ impl Worker {
                     });
                 }
                 Command::Lyrics(request) => self.fetch_lyrics(*request),
+                Command::SpotSurfPrepare { uri } => self.prepare_spotsurf(uri),
+                Command::SpotSurfPrepared { uri, result } => {
+                    self.on_spotsurf_prepared(uri, result);
+                }
+                Command::SpotSurfLaunch { uri } => self.launch_spotsurf(&uri),
+                Command::SpotSurfPlay { uri } => self.spotsurf_play(uri),
+                Command::SpotSurfQueue { uri } => self.spotsurf_queue(uri),
+                Command::SpotSurfTell(message) => {
+                    if let Some(game) = &self.spotsurf_game {
+                        game.tell(message);
+                    }
+                }
+                Command::SpotSurfHeard(report) => self.on_spotsurf_heard(report),
                 Command::Rootlist => self.fetch_rootlist(),
                 Command::RootlistFinished { generation, result } => {
                     self.on_rootlist_finished(generation, result);
@@ -2919,6 +2982,170 @@ impl Worker {
             result,
         });
         self.start_album_type_lookup();
+    }
+
+    /// A song held whole in memory, if it is.
+    fn spotsurf_held(&self, uri: &str) -> Option<Arc<spotsurf_core::EncodedTrack>> {
+        self.spotsurf_tracks
+            .iter()
+            .find(|(held, _)| held == uri)
+            .map(|(_, track)| Arc::clone(track))
+    }
+
+    /// Start fetching `uri` whole, unless it is held or already on its way.
+    fn fetch_spotsurf(&mut self, uri: String) {
+        if self.spotsurf_held(&uri).is_some() || self.spotsurf_fetching.contains(&uri) {
+            return;
+        }
+        let Some(engine) = self.engine.clone() else {
+            let reason = "Playback is not enabled on this computer".to_string();
+            self.on_spotsurf_prepared(uri, Err(reason));
+            return;
+        };
+        self.spotsurf_fetching.push(uri.clone());
+        let commands = self.commands.clone();
+        tokio::spawn(async move {
+            let session = engine.session().clone();
+            let result = crate::spotsurf::fetch(&session, &uri).await.map(Arc::new);
+            let _ = commands.send(Command::SpotSurfPrepared { uri, result });
+        });
+    }
+
+    /// Get `uri` ready for the player bar's game button.
+    fn prepare_spotsurf(&mut self, uri: String) {
+        self.spotsurf_wanted = Some(uri.clone());
+        if self.spotsurf_held(&uri).is_some() {
+            self.emit(Event::SpotSurf(crate::spotsurf::Stage::Ready { uri }));
+        } else {
+            self.fetch_spotsurf(uri);
+        }
+    }
+
+    fn on_spotsurf_prepared(
+        &mut self,
+        uri: String,
+        result: Result<Arc<spotsurf_core::EncodedTrack>, String>,
+    ) {
+        self.spotsurf_fetching.retain(|fetching| *fetching != uri);
+        let track = match result {
+            Ok(track) => track,
+            Err(reason) => {
+                log::warn!("SpotSurf could not fetch {uri}: {reason}");
+                if self.spotsurf_play_next.as_deref() == Some(uri.as_str()) {
+                    self.spotsurf_play_next = None;
+                    self.emit(Event::Error(format!(
+                        "SpotSurf could not get this song: {reason}"
+                    )));
+                }
+                if self.spotsurf_wanted.as_deref() == Some(uri.as_str()) {
+                    self.emit(Event::SpotSurf(crate::spotsurf::Stage::Failed {
+                        uri,
+                        reason,
+                    }));
+                }
+                return;
+            }
+        };
+        // Held: the few songs around the one playing, and no more.
+        self.spotsurf_tracks.push((uri.clone(), Arc::clone(&track)));
+        if self.spotsurf_tracks.len() > SPOTSURF_HELD {
+            self.spotsurf_tracks.remove(0);
+        }
+        if let Some(game) = &self.spotsurf_game {
+            if self.spotsurf_play_next.as_deref() == Some(uri.as_str()) {
+                self.spotsurf_play_next = None;
+                game.play(Arc::clone(&track));
+            }
+            if self.spotsurf_queue_next.as_deref() == Some(uri.as_str()) {
+                self.spotsurf_queue_next = None;
+                game.queue(Arc::clone(&track));
+            }
+        }
+        if self.spotsurf_wanted.as_deref() == Some(uri.as_str()) {
+            self.emit(Event::SpotSurf(crate::spotsurf::Stage::Ready { uri }));
+        }
+    }
+
+    /// Start the game on `uri`, which must be held, and silence local output:
+    /// from here the game plays the music.
+    fn launch_spotsurf(&mut self, uri: &str) {
+        let Some(track) = self.spotsurf_held(uri) else {
+            self.emit(Event::Error("The SpotSurf level is not ready yet.".into()));
+            return;
+        };
+        if let Some(game) = &self.spotsurf_game {
+            game.play(track);
+            return;
+        }
+        let Some(game) = crate::spotsurf::Game::find() else {
+            self.emit(Event::Error(
+                "SpotSurf was not found. Set SPOTSURF_HOME to its folder.".into(),
+            ));
+            return;
+        };
+        let commands = self.commands.clone();
+        let heard = move |report| {
+            let _ = commands.send(Command::SpotSurfHeard(report));
+        };
+        match game.start(track, heard) {
+            Ok(session) => {
+                self.spotsurf_game = Some(session);
+                if let Some(engine) = &self.engine {
+                    engine.set_silenced(true);
+                }
+            }
+            Err(error) => self.emit(Event::Error(error)),
+        }
+    }
+
+    /// Have the running game play `uri` now, as soon as it is fetched.
+    fn spotsurf_play(&mut self, uri: String) {
+        let Some(game) = &self.spotsurf_game else {
+            return;
+        };
+        match self.spotsurf_held(&uri) {
+            Some(track) => game.play(track),
+            None => {
+                self.spotsurf_play_next = Some(uri.clone());
+                self.fetch_spotsurf(uri);
+            }
+        }
+    }
+
+    /// Have the running game follow its current song with `uri`.
+    fn spotsurf_queue(&mut self, uri: String) {
+        let Some(game) = &self.spotsurf_game else {
+            return;
+        };
+        match self.spotsurf_held(&uri) {
+            Some(track) => game.queue(track),
+            None => {
+                self.spotsurf_queue_next = Some(uri.clone());
+                self.fetch_spotsurf(uri);
+            }
+        }
+    }
+
+    /// Pass on what the game said; once it has closed, give the music back.
+    fn on_spotsurf_heard(&mut self, report: Option<spotsurf_core::link::Report>) {
+        match report {
+            Some(report) => {
+                if !matches!(report, spotsurf_core::link::Report::Position { .. }) {
+                    log::info!("SpotSurf reports {report:?}");
+                }
+                self.emit(Event::SpotSurfReport(report));
+            }
+            None => {
+                log::info!("SpotSurf closed");
+                self.spotsurf_game = None;
+                self.spotsurf_play_next = None;
+                self.spotsurf_queue_next = None;
+                if let Some(engine) = &self.engine {
+                    engine.set_silenced(false);
+                }
+                self.emit(Event::SpotSurfClosed);
+            }
+        }
     }
 
     fn fetch_lyrics(&self, request: LyricsRequest) {

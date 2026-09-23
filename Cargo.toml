@@ -87,6 +87,13 @@ librespot-playback = { version = "0.8", default-features = false, features = ["r
 librespot-connect = { version = "0.8", default-features = false }
 librespot-metadata = { version = "0.8", default-features = false }
 librespot-protocol = { version = "0.8", default-features = false }
+# SpotSurf (src/spotsurf.rs): fetching the playing song whole, to hand to the
+# game. librespot-audio comes from the same fork as the rest through
+# [patch.crates-io]; spotsurf-core carries the handoff format both sides read.
+librespot-audio = { version = "0.8", default-features = false }
+spotsurf-core = { path = "../SpotSurf/crates/spotsurf-core" }
+# SpotSurf's connector: finding, starting and following the game.
+spotsurf-connector = { path = "../SpotSurf/crates/spotsurf-connector" }
 # Parses the rootlist's playlist4 protobuf, the same crate librespot generates with.
 protobuf = "3"
 # Local playback's audio sink is this crate's own (src/sink.rs): librespot's
@@ -177,6 +184,9 @@ include-po = "0.2"
 polib = "0.3"
 # Run connection-deadline regressions with a virtual clock.
 tokio = { version = "1", features = ["test-util"] }
+# SpotSurf: building a game map from a whole track (examples/spotsurf_probe.rs).
+spotsurf-analysis = { path = "../SpotSurf/crates/spotsurf-analysis" }
+spotsurf-game = { path = "../SpotSurf/crates/spotsurf-game" }
 
 # The icon and version information Windows shows for the executable.
 [target.'cfg(windows)'.build-dependencies]
