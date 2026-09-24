@@ -13,6 +13,7 @@ pub mod login;
 mod lyrics;
 pub mod player_bar;
 pub mod queue;
+pub mod radio;
 pub mod search;
 pub mod settings;
 pub mod show;
@@ -45,7 +46,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         login::show(app, ui, connecting);
         update::show(app, ctx);
         toasts(app, ctx, 20.0);
-        window_controls(ui, &app.palette);
+        window_controls(ui, &app.palette, app.locale);
         window_resize(ui);
         return;
     }
@@ -79,9 +80,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     devices::popup(app, ctx);
     dialogs::show(app, ctx);
     update::show(app, ctx);
-    widgets::drag_ghost(ctx, &app.palette);
+    widgets::drag_ghost(ctx, &app.palette, app.locale);
     toasts(app, ctx, theme::PLAYER_BAR_HEIGHT + 16.0);
-    window_controls(ui, &app.palette);
+    window_controls(ui, &app.palette, app.locale);
     window_resize(ui);
 }
 
@@ -147,6 +148,7 @@ fn page_tint(app: &mut App) -> Option<Color32> {
             .or_else(|| app.known_show(id))
             .and_then(|show| pick_image(&show.images, 64))
             .map(str::to_string),
+        Page::Radio(seed) => pick_image(&app.radio_images(seed), 64).map(str::to_string),
         Page::LikedSongs => return Some(Color32::from_rgb(0x50, 0x38, 0xc8)),
         _ => None,
     };
@@ -212,6 +214,7 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
                                 Page::Album(id) => collection::album(app, ui, &id),
                                 Page::Artist(id) => artist::show(app, ui, &id),
                                 Page::Show(id) => show::show(app, ui, &id),
+                                Page::Radio(seed) => radio::radio(app, ui, &seed),
                                 Page::Queue => queue::page(app, ui),
                                 Page::Settings => settings::show(app, ui),
                             }
@@ -319,7 +322,8 @@ pub(super) fn window_controls_reservation(
 }
 
 /// Draws the Windows caption controls over the outermost top-right header.
-pub fn window_controls(ui: &mut egui::Ui, palette: &theme::Palette) {
+pub fn window_controls(ui: &mut egui::Ui, palette: &theme::Palette, locale: crate::i18n::Locale) {
+    use crate::i18n::gettext;
     if !windows_chrome_visible_here(ui.ctx()) {
         return;
     }
@@ -338,21 +342,31 @@ pub fn window_controls(ui: &mut egui::Ui, palette: &theme::Palette) {
                 for (icon, tooltip, command) in [
                     (
                         Icon::Minus,
-                        "Minimize",
+                        gettext(locale, "Minimize"),
                         egui::ViewportCommand::Minimized(true),
                     ),
                     (
                         if maximized { Icon::Copy } else { Icon::Square },
-                        if maximized { "Restore" } else { "Maximize" },
+                        if maximized {
+                            gettext(locale, "Restore")
+                        } else {
+                            gettext(locale, "Maximize")
+                        },
                         egui::ViewportCommand::Maximized(!maximized),
                     ),
-                    (Icon::X, "Close", egui::ViewportCommand::Close),
+                    (
+                        Icon::X,
+                        gettext(locale, "Close"),
+                        egui::ViewportCommand::Close,
+                    ),
                 ] {
-                    let image = icon.image(palette.secondary, 14.0).alt_text(tooltip);
+                    let image = icon
+                        .image(palette.secondary, 14.0)
+                        .alt_text(tooltip.as_ref());
                     let button = egui::Button::image(image).frame_when_inactive(false);
                     if ui
                         .add_sized(egui::Vec2::splat(36.0), button)
-                        .on_hover_text(tooltip)
+                        .on_hover_text(tooltip.as_ref())
                         .clicked()
                     {
                         ui.ctx().send_viewport_cmd(command);

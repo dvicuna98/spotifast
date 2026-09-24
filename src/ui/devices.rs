@@ -4,6 +4,7 @@ use egui::{Align, CornerRadius, Layout, Rect, Sense, pos2, vec2};
 
 use crate::api::models::Device;
 use crate::app::App;
+use crate::i18n::gettext;
 use crate::model::Action;
 use crate::theme::{self, Icon};
 
@@ -67,7 +68,8 @@ fn enable_playback_row(app: &mut App, ui: &mut egui::Ui) {
     painter.text(
         pos2(rect.left() + 48.0, rect.center().y - 9.0),
         egui::Align2::LEFT_CENTER,
-        format!("{} (this computer)", app.settings.device_name),
+        // Translators: {name} is the name this computer uses in Spotify Connect.
+        gettext(app.locale, "{name} (this computer)").replace("{name}", &app.settings.device_name),
         theme::medium(14.0),
         palette.text,
     );
@@ -75,9 +77,9 @@ fn enable_playback_row(app: &mut App, ui: &mut egui::Ui) {
         pos2(rect.left() + 48.0, rect.center().y + 10.0),
         egui::Align2::LEFT_CENTER,
         if authorizing {
-            "Setting up…"
+            gettext(app.locale, "Setting up…")
         } else {
-            "Set up playback here"
+            gettext(app.locale, "Set up playback here")
         },
         theme::regular(12.0),
         palette.accent,
@@ -137,9 +139,9 @@ fn receiver_row(app: &mut App, ui: &mut egui::Ui, receiver: &crate::zeroconf::Re
         pos2(rect.left() + 48.0, rect.center().y + 10.0),
         egui::Align2::LEFT_CENTER,
         if activating {
-            "Connecting…"
+            gettext(app.locale, "Connecting…")
         } else {
-            "On your network, click to connect"
+            gettext(app.locale, "On your network, click to connect")
         },
         theme::regular(12.0),
         palette.secondary,
@@ -168,6 +170,7 @@ pub fn popup(app: &mut App, ctx: &egui::Context) {
         return;
     }
     let palette = app.palette;
+    let locale = app.locale;
     let button = ctx
         .data(|data| data.get_temp::<Rect>(egui::Id::new(BUTTON_RECT_ID)))
         .unwrap_or_else(|| Rect::from_min_size(pos2(400.0, 400.0), vec2(0.0, 0.0)));
@@ -185,7 +188,12 @@ pub fn popup(app: &mut App, ctx: &egui::Context) {
                 ui.set_width(width);
                 ui.horizontal(|ui| {
                     ui.add_space(6.0);
-                    theme::text(ui, "Connect to a device", theme::bold(16.0), palette.text);
+                    theme::text(
+                        ui,
+                        gettext(locale, "Connect to a device").as_ref(),
+                        theme::bold(16.0),
+                        palette.text,
+                    );
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if app.devices_loading {
                             theme::spinner(ui, 16.0, palette.accent);
@@ -195,7 +203,7 @@ pub fn popup(app: &mut App, ctx: &egui::Context) {
                             15.0,
                             palette.secondary,
                             palette.text,
-                            "Refresh",
+                            &gettext(locale, "Refresh"),
                         )
                         .clicked()
                         {
@@ -216,7 +224,8 @@ pub fn popup(app: &mut App, ctx: &egui::Context) {
                         0,
                         Device {
                             id: Some(local_id.clone()),
-                            name: format!("{} (this computer)", app.settings.device_name),
+                            // Named without its suffix; the row below adds it.
+                            name: app.settings.device_name.clone(),
                             is_active: app.local.is_active(),
                             is_restricted: false,
                             volume_percent: Some(crate::app::volume_to_percent(app.local.volume)),
@@ -264,7 +273,10 @@ pub fn popup(app: &mut App, ctx: &egui::Context) {
                             theme::subtle(
                                 ui,
                                 &palette,
-                                "No devices found. Open Spotify on another device, then refresh.",
+                                &gettext(
+                                    locale,
+                                    "No devices found. Open Spotify on another device, then refresh.",
+                                ),
                             );
                             ui.add_space(8.0);
                         }
@@ -272,8 +284,10 @@ pub fn popup(app: &mut App, ctx: &egui::Context) {
                         for device in &devices {
                             let is_local = device.id.is_some() && device.id == local_id;
                             let active = device.id.is_some() && device.id == active_id;
-                            let name = if is_local && !device.name.contains("this computer") {
-                                format!("{} (this computer)", device.name)
+                            let name = if is_local {
+                                // Translators: {name} is the name this computer uses in Spotify Connect.
+                                gettext(locale, "{name} (this computer)")
+                                    .replace("{name}", &device.name)
                             } else {
                                 device.name.clone()
                             };
@@ -307,11 +321,11 @@ pub fn popup(app: &mut App, ctx: &egui::Context) {
                                 color,
                             );
                             let status = if active {
-                                "Listening on this device".to_string()
+                                gettext(locale, "Listening on this device").into_owned()
                             } else if device.is_restricted {
-                                "Restricted".to_string()
+                                gettext(locale, "Restricted").into_owned()
                             } else if is_local {
-                                "Play here".to_string()
+                                gettext(locale, "Play here").into_owned()
                             } else {
                                 device.kind.replace('_', " ")
                             };

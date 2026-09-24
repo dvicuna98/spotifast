@@ -6,6 +6,7 @@ use egui::{CornerRadius, Layout, Rect, Sense, UiBuilder, Vec2, pos2, vec2};
 
 use crate::api::models::{Episode, PlayableItem, Show, pick_image};
 use crate::app::App;
+use crate::i18n::{gettext, ngettext};
 use crate::model::{Action, Loadable, Page, RowContext};
 use crate::theme::{self, Icon};
 use crate::util;
@@ -24,6 +25,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
     };
     let preview = super::loading_preview(ui.ctx(), id, &page.show, || app.known_show(id).cloned());
     let palette = app.palette;
+    let locale = app.locale;
     match &page.show {
         Loadable::Loaded(show) => {
             show_hero(app, ui, show, preview.as_deref());
@@ -37,7 +39,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
                     .map(|episode| episode.uri.as_str()),
             );
             if !show.description.is_empty() {
-                theme::section_title(ui, &palette, "About");
+                theme::section_title(ui, &palette, &gettext(locale, "About"));
                 ui.add_space(4.0);
                 let description = util::strip_html(&show.description);
                 let galley = crate::bidi::layout(
@@ -52,7 +54,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
                 ui.add(egui::Label::new(galley));
                 ui.add_space(16.0);
             }
-            theme::section_title(ui, &palette, "All episodes");
+            theme::section_title(ui, &palette, &gettext(locale, "All episodes"));
             ui.add_space(6.0);
             let episodes = page.episodes.items.clone();
             let show_image = pick_image(&show.images, 64).map(str::to_string);
@@ -101,9 +103,20 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
 }
 
 fn show_hero(app: &mut App, ui: &mut egui::Ui, show: &Show, preview: Option<&Show>) {
+    let locale = app.locale;
     let mut byline = vec![(show.publisher.clone(), None)];
     if let Some(total) = show.total_episodes {
-        byline.push((format!("{total} episodes"), None));
+        byline.push((
+            ngettext(
+                locale,
+                // Translators: {count} is the number of episodes of a podcast.
+                "{count} episode",
+                "{count} episodes",
+                total,
+            )
+            .replace("{count}", &total.to_string()),
+            None,
+        ));
     }
     let images = hero_images(
         &show.images,
@@ -116,7 +129,7 @@ fn show_hero(app: &mut App, ui: &mut egui::Ui, show: &Show, preview: Option<&Sho
         Hero {
             images,
             liked: false,
-            kind: "Podcast",
+            kind: gettext(locale, "Podcast"),
             title: &show.name,
             description: None,
             byline,
@@ -127,12 +140,19 @@ fn show_hero(app: &mut App, ui: &mut egui::Ui, show: &Show, preview: Option<&Sho
 
 fn show_actions(app: &mut App, ui: &mut egui::Ui, show: &Show, latest: Option<&str>) {
     let palette = app.palette;
+    let locale = app.locale;
     let saved = app.is_saved(&show.uri).unwrap_or(false);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 18.0;
         if let Some(uri) = latest {
             if app.play_pending(uri) {
-                theme::circle_spinner(ui, 56.0, palette.accent, palette.on_accent, "Starting…");
+                theme::circle_spinner(
+                    ui,
+                    56.0,
+                    palette.accent,
+                    palette.on_accent,
+                    &gettext(locale, "Starting…"),
+                );
             } else if theme::circle_button(
                 ui,
                 Icon::PlayFilled,
@@ -140,7 +160,7 @@ fn show_actions(app: &mut App, ui: &mut egui::Ui, show: &Show, latest: Option<&s
                 palette.accent,
                 palette.accent_hover,
                 palette.on_accent,
-                "Play latest episode",
+                &gettext(locale, "Play latest episode"),
             )
             .clicked()
             {
@@ -154,12 +174,16 @@ fn show_actions(app: &mut App, ui: &mut egui::Ui, show: &Show, latest: Option<&s
             (
                 Icon::CircleCheck,
                 palette.accent,
-                "Remove from Your Library",
+                gettext(locale, "Remove from Your Library"),
             )
         } else {
-            (Icon::CirclePlus, palette.secondary, "Follow podcast")
+            (
+                Icon::CirclePlus,
+                palette.secondary,
+                gettext(locale, "Follow podcast"),
+            )
         };
-        if theme::icon_button(ui, icon, 26.0, color, palette.text, tooltip).clicked() {
+        if theme::icon_button(ui, icon, 26.0, color, palette.text, &tooltip).clicked() {
             app.actions.push(Action::ToggleSaved(show.uri.clone()));
         }
         let more = theme::icon_button(
@@ -168,7 +192,7 @@ fn show_actions(app: &mut App, ui: &mut egui::Ui, show: &Show, latest: Option<&s
             26.0,
             palette.secondary,
             palette.text,
-            "More",
+            &gettext(locale, "More"),
         );
         egui::Popup::menu(&more)
             .frame(widgets::menu_frame(&palette))
@@ -185,6 +209,7 @@ pub fn episode_row(
     fallback_image: Option<&str>,
 ) {
     let palette = app.palette;
+    let locale = app.locale;
     let (rect, response) = ui.allocate_exact_size(
         vec2(ui.available_width(), EPISODE_ROW_HEIGHT),
         Sense::click(),
@@ -273,7 +298,13 @@ pub fn episode_row(
         Icon::PlayFilled
     };
     if app.play_pending(&episode.uri) {
-        theme::circle_spinner(&mut child, 32.0, palette.text, palette.window, "Starting…");
+        theme::circle_spinner(
+            &mut child,
+            32.0,
+            palette.text,
+            palette.window,
+            &gettext(locale, "Starting…"),
+        );
     } else if theme::circle_button(
         &mut child,
         icon,
@@ -285,7 +316,7 @@ pub fn episode_row(
             palette.text
         },
         palette.window,
-        "Play",
+        &gettext(locale, "Play"),
     )
     .clicked()
     {
@@ -300,7 +331,7 @@ pub fn episode_row(
     }
     let mut meta = Vec::new();
     if let Some(date) = &episode.release_date {
-        meta.push(util::format_date(date));
+        meta.push(util::format_date(app.locale, date));
     }
     let resume = episode.resume_point.as_ref();
     let remaining = resume
@@ -311,8 +342,12 @@ pub fn episode_row(
                 .saturating_sub(resume.resume_position_ms)
         });
     match remaining {
-        Some(left) => meta.push(format!("{} left", util::format_episode_ms(left))),
-        None => meta.push(util::format_episode_ms(episode.duration_ms)),
+        Some(left) => meta.push(
+            // Translators: {duration} is the time left in an episode, such as "12 min".
+            gettext(locale, "{duration} left")
+                .replace("{duration}", &util::format_episode_ms(app.locale, left)),
+        ),
+        None => meta.push(util::format_episode_ms(app.locale, episode.duration_ms)),
     }
     let meta_text = meta.join(" • ");
     let meta_galley =
@@ -331,7 +366,7 @@ pub fn episode_row(
             ui.painter().text(
                 pos2(x + 20.0, footer_y),
                 egui::Align2::LEFT_CENTER,
-                "Played",
+                gettext(locale, "Played"),
                 theme::regular(12.0),
                 palette.secondary,
             );
@@ -359,7 +394,7 @@ pub fn episode_row(
         18.0,
         palette.secondary,
         palette.text,
-        "More",
+        &gettext(locale, "More"),
     );
     let item = PlayableItem::Episode(episode.clone());
     egui::Popup::menu(&more)

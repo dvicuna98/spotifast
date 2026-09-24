@@ -29,8 +29,18 @@ fn compiled_po_omits_unfinished_messages_and_uses_locale_plural_rules() {
     }
 }
 
+/// Catalogs expected to translate every message in the template.
+///
+/// The others are filled in as translators reach them: an empty `msgstr`
+/// compiles out and shows the English source, as the test above checks. A
+/// catalog listed here must stay complete, and every catalog must keep the
+/// placeholders of whatever it does translate.
+const COMPLETE: &[&str] = &[
+    "de-DE", "es", "fr", "it", "ja", "nl", "pl", "pt-BR", "pt-PT", "ru", "sv", "zh-Hans", "zh-Hant",
+];
+
 #[test]
-fn all_pilot_catalogs_cover_the_template_and_preserve_named_placeholders() {
+fn catalogs_cover_the_template_and_preserve_named_placeholders() {
     // A POT leaves these values for msginit. For this comparison its source
     // language is English; the translator's PO carries its own actual rules.
     let template = include_str!("../assets/i18n/spotifast.pot").replace(
@@ -45,6 +55,9 @@ fn all_pilot_catalogs_cover_the_template_and_preserve_named_placeholders() {
             continue;
         }
         catalogs += 1;
+        let complete = path
+            .file_stem()
+            .is_some_and(|stem| COMPLETE.contains(&&*stem.to_string_lossy()));
         let translated_catalog = polib::po_file::parse(&path).unwrap();
         assert_eq!(
             template.count(),
@@ -55,20 +68,40 @@ fn all_pilot_catalogs_cover_the_template_and_preserve_named_placeholders() {
         for source in template.messages() {
             let translated = translated_catalog
                 .find_message(source.msgctxt(), source.msgid(), source.msgid_plural().ok())
-                .unwrap_or_else(|| panic!("missing pilot translation for {}", source.msgid()));
-            assert!(!translated.is_fuzzy());
+                .unwrap_or_else(|| panic!("missing template entry for {}", source.msgid()));
+            assert!(
+                !translated.is_fuzzy(),
+                "{}: {}",
+                path.display(),
+                source.msgid()
+            );
             if let Ok(forms) = translated.msgstr_plural() {
                 assert_eq!(
                     forms.len(),
                     translated_catalog.metadata.plural_rules.nplurals
                 );
                 for form in forms {
-                    assert!(!form.is_empty());
-                    assert_eq!(named_placeholders(form), named_placeholders(source.msgid()));
+                    assert!(
+                        !complete || !form.is_empty(),
+                        "{} claims to be complete but {:?} is untranslated",
+                        path.display(),
+                        source.msgid()
+                    );
+                    if !form.is_empty() {
+                        assert_eq!(named_placeholders(form), named_placeholders(source.msgid()));
+                    }
                 }
             } else {
                 let text = translated.msgstr().unwrap();
-                assert!(!text.is_empty());
+                assert!(
+                    !complete || !text.is_empty(),
+                    "{} claims to be complete but {:?} is untranslated",
+                    path.display(),
+                    source.msgid()
+                );
+                if text.is_empty() {
+                    continue;
+                }
                 assert_eq!(
                     named_placeholders(text),
                     named_placeholders(source.msgid()),

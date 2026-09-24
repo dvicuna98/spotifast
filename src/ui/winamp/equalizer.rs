@@ -9,6 +9,7 @@ use egui::Sense;
 
 use crate::app::{App, NowPlaying};
 use crate::eq::{self, EqSettings, RANGE_DB};
+use crate::i18n::gettext;
 use crate::model::Action;
 use crate::skin::layout::{self, Area};
 use crate::skin::sprites::Sprite;
@@ -55,7 +56,7 @@ pub(super) fn show(app: &mut App, view: &mut View, now: Option<&NowPlaying>, foc
             false,
             "eq-shade",
         )
-        .on_hover_text("Roll the equalizer up")
+        .on_hover_text(gettext(app.locale, "Roll the equalizer up").as_ref())
         .clicked()
     {
         app.actions.push(Action::ToggleWinampEqShade);
@@ -221,7 +222,7 @@ fn shade(app: &mut App, view: &mut View, now: Option<&NowPlaying>, focused: bool
             false,
             "eq-unshade",
         )
-        .on_hover_text("Roll the equalizer down")
+        .on_hover_text(gettext(app.locale, "Roll the equalizer down").as_ref())
         .clicked()
     {
         app.actions.push(Action::ToggleWinampEqShade);

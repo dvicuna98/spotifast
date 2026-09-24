@@ -51,10 +51,12 @@ AUR and Homebrew packages now use the Spotifast name. See [rename compatibility]
   combines entries with the same device ID.
 - **Library.** Browse playlists, Liked Songs, saved albums, followed artists,
   podcasts, and saved episodes. Filter, pin, and reorder sidebar items.
+  On `main`, after 0.9.1, the Library header switches between a list and a
+  responsive cover grid.
   On `main`, after 0.9.1, with local playback enabled, audiobooks saved in
   Spotify stay out of Podcasts, since they can't be played here.
-  Since 0.8.0, double-click a playlist in Library to start playback;
-  a single click opens it.
+  Since 0.8.0, double-click a playlist row in Library to start playback;
+  a single click opens it. In the grid, a card's corner button plays it.
   Settings offers a compact track list with one line per song and spaced
   separators between its name, artists and added date.
   Since 0.8.0, choose name, recent plays, or saved-date order where
@@ -81,6 +83,8 @@ AUR and Homebrew packages now use the Spotifast name. See [rename compatibility]
   badges in narrow windows; hover their icons to read the labels.
 - **Home** with Made for you, Recently played, your top artists and songs, and
   recommendations. Right-click playlist shortcuts and shelf cards for their actions.
+  On `main`, after 0.9.1, **Your podcasts** lists episodes of your saved
+  podcasts that you have started, then new ones you have not.
 - **Artist pages** with popular songs, a filterable discography, and related
   artists. **Album**, **playlist**, and **podcast** pages support playback
   from any row. Since 0.8.0, album and playlist scrollbars represent the full track count;
@@ -90,6 +94,12 @@ AUR and Homebrew packages now use the Spotifast name. See [rename compatibility]
   playback before Web API metadata arrives (available since 0.8.0).
   On `main`, after 0.8.0, an album, single, or EP's **Add to queue** adds all
   its playable songs in album order, on this computer or another device.
+- **Radio.** On `main`, after 0.9.1, **Go to song radio** in a song's menu, and
+  **Go to playlist radio**, **Go to album radio**, or **Go to artist radio** in
+  their **…** menus, open a page of 50 songs Spotify picks to go with them.
+  **Play** plays exactly those songs, **Refresh** in **…** asks for a new mix,
+  and **Save as playlist** keeps the mix as a private playlist. Radio needs
+  playback on this computer to be set up.
 - **Edit your playlists.** Create, rename, describe, reorder, and delete them.
   Since 0.8.0, hold a dragged song near the playlist's top or bottom
   edge to scroll to rows beyond the screen. The Library sidebar scrolls while
@@ -124,6 +134,13 @@ AUR and Homebrew packages now use the Spotifast name. See [rename compatibility]
   Starting an album or playlist keeps those additions under **Playing next**,
   even when it starts a song you also queued. **Clear queue** removes the
   additions and keeps the playing collection's remaining songs.
+  Dropping a dragged song, or selection, on the player bar's Queue button
+  queues it the same way. While this computer is playing locally, dropping
+  a song at a position within the open queue's *Playing next* inserts it
+  there instead of always at the end, and dragging a queued row elsewhere in
+  that section reorders it; with a remote Spotify Connect device, every drop
+  still just adds to the end, since neither Spotify nor librespot can
+  reorder or insert into a live remote queue.
   Selecting repeated playlist rows queues every occurrence in the selected
   order. A repeated click counts once, and the notification counts actual additions.
   Since 0.8.0, Recent keeps repeated short-song plays separate,
@@ -185,8 +202,9 @@ AUR and Homebrew packages now use the Spotifast name. See [rename compatibility]
   starts at a default position on the current desktop.
   Clicking or double-clicking the Windows tray icon brings the window forward;
   the tray menu still offers Show or hide.
-  On Windows, since 0.8.0, hide its taskbar button from Settings or the mini
-  player's options menu while keeping the window and tray controls available.
+  On Windows, since 0.8.0, and in Linux X11 sessions, hide its taskbar button
+  from Settings or the mini player's options menu while keeping the window
+  and tray controls available.
   On Wayland, use the desktop's Keep Above shortcut or rule; the app's
   Always on top controls are unavailable there.
 
@@ -213,7 +231,8 @@ AUR and Homebrew packages now use the Spotifast name. See [rename compatibility]
   `playerctl` see Spotifast like any other player. On macOS and Windows,
   `spotifast next` and its siblings drive the running app from a terminal,
   a launcher, or a hotkey. On Windows, since 0.8.0, hover the taskbar button
-  for Previous, Play/Pause, and Next under the window preview.
+  for Previous, Play/Pause, and Next under the window preview. On macOS,
+  right-click the Dock icon for Play/Pause, Next, and Previous.
 
 ## Install
 
@@ -411,6 +430,10 @@ play a focused song. On `main`, after 0.8.0, `Space` always plays or pauses
 the current song unless a text field has focus. In a playlist, album or Liked
 Songs, up and down arrows move focus between whole song rows in the displayed order and scroll them
 into view. Tab still reaches the artist links, Like and More controls.
+On `main`, after 0.9.1, `Ctrl+A` selects every song the list shows,
+`Ctrl+C` copies the selected songs' links one per line, and `Ctrl+V` adds
+the song links on the clipboard to the end of a playlist you can edit.
+A focused text field keeps these keys for its own text.
 Left and right arrows adjust a focused volume or seek
 slider. Windows testing with NVDA and accessibility for Winamp skins are
 still in progress.
@@ -430,6 +453,8 @@ still in progress.
 | `Alt+←` / `Alt+→` | Back or forward |
 | `Ctrl+H` / `Ctrl+L` | Home / Liked Songs |
 | `Ctrl+Shift+A` / `Ctrl+Shift+B` | Playing artist / album |
+| `Ctrl+A` | Select every song in a playlist, album or Liked Songs |
+| `Ctrl+C` / `Ctrl+V` | Copy the selected songs' links / add copied song links to your playlist |
 | `Ctrl+M` | Winamp mini player |
 | `Ctrl+Shift+K` | MilkDrop |
 | `Ctrl+,` | Settings |
@@ -440,7 +465,9 @@ On macOS, `Cmd` replaces `Ctrl`.
 
 On Windows, since 0.8.0, middle-click a scrolling list and move the pointer to
 autoscroll. Click, press Esc, use the wheel or switch windows to stop.
-It works automatically, with no Settings toggle. See [autoscroll](docs/_guide/using-spotifast.md#middle-click-autoscroll).
+It works automatically on Windows. On Linux, turn on **Middle-click
+autoscroll** under **Settings > Appearance**; it is off by default because a
+middle click usually pastes there. See [autoscroll](docs/_guide/using-spotifast.md#middle-click-autoscroll).
 
 ## Controlling it from outside
 
@@ -519,6 +546,11 @@ and follow the current palette. Existing theme choices and custom files stay
 intact. The picker lists Follow system, Light and Dark first, then the available Omarchy
 integration and local palettes. The **Open themes folder** button in Settings
 opens the local JSON palette directory.
+The interface follows the operating system's language when Spotifast has a
+translation for it, and English otherwise. **Settings → Appearance → Language**
+picks another one, listed by its own name, and applies it at once; **System**
+follows the computer again. Anything a translation does not cover yet appears
+in English.
 Playback settings apply when you press **Apply and restart playback**.
 The Settings page has its own search: type under the title to narrow the
 rows, clear the field to see everything again.
@@ -588,6 +620,8 @@ cargo run --features demo -- --demo --demo-page playlist:pl1 --demo-show queue
 Demo mode never writes settings. `--demo-shot <PATH>` writes the window to a
 PNG and exits, which is useful for reproducible interface screenshots.
 `--demo-size WIDTHxHEIGHT` sets the window size in logical pixels for that shot.
+`--demo-drag X,Y:X,Y` holds a drag in the shot: it presses at the first point
+and keeps the button down at the second.
 Demo windows ignore saved window geometry and do not save window or interface state.
 Use `--demo-data <DIRECTORY>` to keep demo caches and logs in a separate directory.
 
@@ -597,11 +631,10 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening an issue or pull
 request. It covers project scope and required checks.
 
 Translations use standard gettext `.po` files in `assets/i18n/`, with an English
-`.pot` template. The current pilot translates navigation, Library labels,
-player-bar controls, Queue and Lyrics panels, and shared loading/retry labels
-in 12 languages, including
-Portuguese and Chinese variants, in demo mode; the
-production interface remains English. See
+`.pot` template. The interface is marked for translation throughout and ships
+with 13 translations, including Portuguese and Chinese variants.
+Spanish is complete; the others cover the earlier navigation, player and panel
+labels and fall back to English for the rest. See
 [Translating Spotifast](docs/_reference/translating.md) for editing with existing
 translation tools, previewing, and reporting translation problems.
 

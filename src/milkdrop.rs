@@ -46,10 +46,16 @@ pub fn fps_stops(screen: u32, current: u32) -> Vec<u32> {
 }
 
 /// Label for a frame-rate stop, marking the screen's refresh rate.
-pub fn fps_label(rate: u32, screen: u32) -> String {
+pub fn fps_label(locale: crate::i18n::Locale, rate: u32, screen: u32) -> String {
+    use crate::i18n::gettext;
     match rate {
-        0 => "Uncapped".to_string(),
-        rate if rate == screen => format!("{rate} fps, your screen"),
+        0 => gettext(locale, "Uncapped").into_owned(),
+        rate if rate == screen => gettext(
+            locale,
+            // Translators: A frame rate that matches the display. Keep {rate}.
+            "{rate} fps, your screen",
+        )
+        .replace("{rate}", &rate.to_string()),
         rate => format!("{rate} fps"),
     }
 }
@@ -440,9 +446,12 @@ mod tests {
             vec![30, 60, 90, 144, 0],
             "a rate set by hand keeps a stop of its own"
         );
-        assert_eq!(fps_label(0, 144), "Uncapped");
-        assert_eq!(fps_label(144, 144), "144 fps, your screen");
-        assert_eq!(fps_label(30, 144), "30 fps");
+        assert_eq!(fps_label(crate::i18n::Locale::English, 0, 144), "Uncapped");
+        assert_eq!(
+            fps_label(crate::i18n::Locale::English, 144, 144),
+            "144 fps, your screen"
+        );
+        assert_eq!(fps_label(crate::i18n::Locale::English, 30, 144), "30 fps");
     }
 
     /// R switches between random and the folder's own order; in order,

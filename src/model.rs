@@ -18,7 +18,14 @@ pub struct TableRowsCache {
     pub generation: u64,
     pub items_revision: u64,
     pub user_names_revision: u64,
-    pub items: Arc<[TableItem]>,
+    pub items: Arc<Vec<TableItem>>,
+    /// Playlist rows retain their server slots, including gaps for unavailable items.
+    pub playlist_positions: Option<Arc<Vec<usize>>>,
+    pub playlist_raw_count: usize,
+    pub playlist_duration_ms: u64,
+    pub playlist_owner: Option<(Option<String>, String)>,
+    /// Set only when the next revision extends this cached playlist prefix.
+    pub playlist_append_revision: Option<u64>,
 }
 
 impl TableRowsCache {
@@ -26,6 +33,13 @@ impl TableRowsCache {
     /// the top-level URI and title.
     pub fn retained_bytes(&self) -> usize {
         std::mem::size_of::<Self>()
+            + self.items.capacity() * std::mem::size_of::<TableItem>()
+            + self.playlist_positions.as_ref().map_or(0, |positions| {
+                positions.capacity() * std::mem::size_of::<usize>()
+            })
+            + self.playlist_owner.as_ref().map_or(0, |(id, name)| {
+                id.as_ref().map_or(0, String::len) + name.len()
+            })
             + self
                 .items
                 .iter()
@@ -106,6 +120,9 @@ pub enum Page {
     Album(String),
     Artist(String),
     Show(String),
+    /// Spotify's radio seeded by a song, playlist, album, or artist, by the
+    /// seed's URI.
+    Radio(String),
     Queue,
     Settings,
 }
@@ -125,6 +142,7 @@ impl Page {
             Page::Album(id) => format!("album:{id}"),
             Page::Artist(id) => format!("artist:{id}"),
             Page::Show(id) => format!("show:{id}"),
+            Page::Radio(seed) => format!("radio:{seed}"),
             Page::Queue => "queue".into(),
             Page::Settings => "settings".into(),
         }
@@ -149,6 +167,7 @@ impl Page {
                     "album" => Page::Album(id.into()),
                     "artist" => Page::Artist(id.into()),
                     "show" => Page::Show(id.into()),
+                    "radio" if crate::util::station_uri(id).is_some() => Page::Radio(id.into()),
                     _ => return None,
                 }
             }
@@ -543,6 +562,13 @@ impl<T> CursorList<T> {
 pub struct Library {
     pub playlists: Loadable<Vec<Playlist>>,
     pub playlists_next: Option<u32>,
+    /// Which load of the playlists the pages on their way belong to. Every
+    /// load from the top takes a new one, so a page asked for by an earlier
+    /// load is not taken into the new list, even at the same offset.
+    pub playlists_generation: u64,
+    /// The later playlist page on its way, so a second answer for a page
+    /// already taken adds nothing.
+    pub playlists_asked: Option<u32>,
     pub liked: PagedList<SavedTrack>,
     pub albums: PagedList<SavedAlbum>,
     pub artists: CursorList<Artist>,
@@ -564,6 +590,11 @@ pub struct HomeData {
     pub recommendations: Loadable<Vec<Track>>,
     pub discover: HashMap<String, Loadable<Vec<Playlist>>>,
     pub discover_pending: HashMap<String, Loadable<Vec<Playlist>>>,
+    /// Saved podcasts with their newest episodes, in library order, for the
+    /// podcast shelf. A refresh replaces them only once it answers.
+    pub podcasts: Vec<(Show, Vec<Episode>)>,
+    /// The Home generation whose podcast episodes were last asked for.
+    pub podcasts_generation: u64,
     pub generation: u64,
     pub top_songs_generation: u64,
     pub requested: bool,
@@ -595,15 +626,16 @@ impl SearchFilter {
         Self::Episodes,
     ];
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
+        use crate::i18n::{gettext, pgettext};
         match self {
-            Self::All => "All",
-            Self::Songs => "Songs",
-            Self::Artists => "Artists",
-            Self::Albums => "Albums",
-            Self::Playlists => "Playlists",
-            Self::Podcasts => "Podcasts",
-            Self::Episodes => "Episodes",
+            Self::All => pgettext(locale, "filter", "All"),
+            Self::Songs => gettext(locale, "Songs"),
+            Self::Artists => gettext(locale, "Artists"),
+            Self::Albums => gettext(locale, "Albums"),
+            Self::Playlists => gettext(locale, "Playlists"),
+            Self::Podcasts => gettext(locale, "Podcasts"),
+            Self::Episodes => gettext(locale, "Episodes"),
         }
     }
 }
@@ -691,12 +723,13 @@ impl DiscographyFilter {
     pub const ALL: [DiscographyFilter; 4] =
         [Self::All, Self::Albums, Self::Singles, Self::AppearsOn];
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
+        use crate::i18n::{gettext, pgettext};
         match self {
-            Self::All => "All",
-            Self::Albums => "Albums",
-            Self::Singles => "Singles & EPs",
-            Self::AppearsOn => "Appears On",
+            Self::All => pgettext(locale, "filter", "All"),
+            Self::Albums => gettext(locale, "Albums"),
+            Self::Singles => gettext(locale, "Singles & EPs"),
+            Self::AppearsOn => gettext(locale, "Appears On"),
         }
     }
 
@@ -718,6 +751,21 @@ pub struct ArtistPage {
     pub related: Loadable<Vec<Artist>>,
     pub filter: DiscographyFilter,
     pub show_all_top: bool,
+}
+
+/// A radio page: the songs Spotify mixed for its seed, which are the songs
+/// its Play button plays.
+#[derive(Default)]
+pub struct RadioPage {
+    pub songs: Loadable<Vec<Track>>,
+    /// The name and artwork known when the page opened, kept should the
+    /// seed's own details be let go while the page stays.
+    pub name: Option<String>,
+    pub images: Vec<crate::api::models::Image>,
+    /// Identifies the request whose answer may fill `songs`.
+    pub generation: u64,
+    /// A new mix is on its way; the songs shown stay until it arrives.
+    pub refreshing: bool,
 }
 
 #[derive(Default)]
@@ -785,7 +833,7 @@ pub struct DragTrack {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlayingFrom {
     pub name: String,
-    /// The page that opens on click. A song radio has none.
+    /// The page that opens on click, when there is one.
     pub page: Option<Page>,
 }
 
@@ -871,8 +919,6 @@ pub enum Action {
         uri: String,
         index: u32,
     },
-    /// Spotify's station seeded by this song.
-    PlayTrackRadio(String),
     ShufflePlay(String),
     TogglePlay,
     Next,
@@ -896,6 +942,20 @@ pub enum Action {
     /// Queue several songs in order and show one notification.
     QueueMany {
         songs: Vec<(String, String)>,
+    },
+    /// Move a row within the manually queued "Playing next" section, from a
+    /// drag dropped back on the queue. Only applied while the local player
+    /// is the active target; see [`crate::app::App::queue_locally_reorderable`].
+    MoveInQueue {
+        from: usize,
+        to: usize,
+    },
+    /// Insert dragged songs into "Playing next" at a position, instead of
+    /// always appending like `QueueMany`. Falls back to appending when the
+    /// local player is not the active target.
+    InsertInQueue {
+        items: Vec<PlayableItem>,
+        position: usize,
     },
     /// Set saved state for several songs explicitly.
     SetSavedMany {
@@ -952,8 +1012,18 @@ pub enum Action {
     ClearQueue,
     /// Save the current and upcoming queue as a playlist.
     SaveQueueAsPlaylist,
+    /// Save a radio page's songs to a new playlist, by the seed's URI.
+    SaveRadio(String),
     RefreshQueue,
     CopyLink(String),
+    /// Copy picked songs' links, one per line, and remember the songs so a
+    /// paste of the same links can show their rows at once.
+    CopySongs(Vec<PlayableItem>),
+    /// Append the Spotify song links in pasted text to an editable playlist.
+    PasteSongs {
+        playlist_id: String,
+        text: String,
+    },
     /// Open a web page in the browser.
     OpenUrl(String),
     OpenInSpotify(String),
@@ -1002,6 +1072,8 @@ pub enum Action {
     InstallUpdate,
     SettingsChanged,
     SetTheme(crate::settings::ThemeChoice),
+    /// Draw the interface in this language from the next frame on.
+    SetLanguage(crate::settings::LanguageChoice),
     OpenThemesFolder,
     SetCustomTheme(String),
     ReloadThemes,
@@ -1009,6 +1081,8 @@ pub enum Action {
         shelf: crate::settings::LibraryShelf,
         sort: crate::settings::LibrarySort,
     },
+    SetLibraryGrid(bool),
+    ToggleLibraryFolder(String),
     ArrangeLibrary {
         pinned: Vec<String>,
         /// A drag outside the pin block selects this local playlist order.

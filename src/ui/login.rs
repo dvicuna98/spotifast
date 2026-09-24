@@ -4,12 +4,14 @@ use egui::{Align, CornerRadius, Frame, Layout, Margin, Rect, Stroke, Vec2, pos2}
 
 use crate::app::App;
 use crate::backend::AuthStatus;
+use crate::i18n::gettext;
 use crate::model::Action;
 use crate::settings::ProxyMode;
 use crate::theme;
 
 pub fn show(app: &mut App, ui: &mut egui::Ui, connecting: bool) {
     let palette = app.palette;
+    let locale = app.locale;
     let ctx = ui.ctx().clone();
     egui::CentralPanel::default()
         .frame(Frame::new().fill(palette.window))
@@ -69,7 +71,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, connecting: bool) {
                     theme::logo(ui, logo.center(), 72.0, palette.accent, palette.on_accent);
                     ui.add_space(6.0);
                     theme::text(ui, "Spotifast", theme::bold(30.0), palette.text);
-                    theme::text(ui, "A native Spotify client.", theme::regular(14.5), palette.secondary);
+                    theme::text(ui, gettext(locale, "A native Spotify client."), theme::regular(14.5), palette.secondary);
                     ui.add_space(22.0);
                     match &app.auth {
                         AuthStatus::WaitingForBrowser { url } => {
@@ -77,14 +79,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, connecting: bool) {
                             ui.horizontal(|ui| {
                                 ui.add_space((ui.available_width() - 250.0).max(0.0) / 2.0);
                                 theme::spinner(ui, 18.0, palette.accent);
-                                theme::text(ui, "Waiting for Spotify in your browser…", theme::medium(14.0), palette.text);
+                                theme::text(ui, gettext(locale, "Waiting for Spotify in your browser…"), theme::medium(14.0), palette.text);
                             });
                             ui.add_space(6.0);
-                            if theme::link(ui, "Didn't open? Open the sign-in page again", theme::regular(13.0), palette.secondary).clicked() {
+                            if theme::link(ui, gettext(locale, "Didn't open? Open the sign-in page again"), theme::regular(13.0), palette.secondary).clicked() {
                                 ctx.open_url(egui::OpenUrl::new_tab(url));
                             }
                             ui.add_space(14.0);
-                            if theme::pill_button(ui, &palette, "Cancel", false).clicked() {
+                            if theme::pill_button(ui, &palette, &gettext(locale, "Cancel"), false).clicked() {
                                 app.actions.push(Action::CancelSignIn);
                             }
                         }
@@ -92,7 +94,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, connecting: bool) {
                             ui.horizontal(|ui| {
                                 ui.add_space((ui.available_width() - 200.0).max(0.0) / 2.0);
                                 theme::spinner(ui, 18.0, palette.accent);
-                                theme::text(ui, "Connecting to Spotify…", theme::medium(14.0), palette.text);
+                                theme::text(ui, gettext(locale, "Connecting to Spotify…"), theme::medium(14.0), palette.text);
                             });
                         }
                         AuthStatus::Failed(message) => {
@@ -101,7 +103,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, connecting: bool) {
                                 egui::Label::new(egui::RichText::new(message).font(theme::regular(13.0)).color(palette.danger)).wrap(),
                             );
                             ui.add_space(12.0);
-                            if big_button(ui, app, "Try again") {
+                            if big_button(ui, app, &gettext(locale, "Try again")) {
                                 app.actions.push(Action::SignIn);
                             }
                             if app.settings.web_client_id.is_some() {
@@ -109,7 +111,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, connecting: bool) {
                                 if theme::pill_button(
                                     ui,
                                     &palette,
-                                    "Use the shared Spotify app instead",
+                                    &gettext(locale, "Use the shared Spotify app instead"),
                                     false,
                                 )
                                 .clicked()
@@ -123,13 +125,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, connecting: bool) {
                             }
                         }
                         _ => {
-                            if big_button(ui, app, "Sign in with Spotify") {
+                            if big_button(ui, app, &gettext(locale, "Sign in with Spotify")) {
                                 app.actions.push(Action::SignIn);
                             }
                             ui.add_space(10.0);
                             ui.add(
                                 egui::Label::new(
-                                    egui::RichText::new("Sign in through your browser. Spotifast never sees your password. Local playback needs Spotify Premium.")
+                                    egui::RichText::new(gettext(locale, "Sign in through your browser. Spotifast never sees your password. Local playback needs Spotify Premium."))
                                         .font(theme::regular(12.5))
                                         .color(palette.secondary),
                                 )
@@ -144,7 +146,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, connecting: bool) {
                                 if theme::pill_button(
                                     ui,
                                     &palette,
-                                    "Use the shared Spotify app instead",
+                                    &gettext(locale, "Use the shared Spotify app instead"),
                                     false,
                                 )
                                 .clicked()
@@ -162,7 +164,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, connecting: bool) {
                         ui.with_layout(Layout::top_down(Align::Center), |ui| {
                             if theme::link(
                                 ui,
-                                "Proxy Settings",
+                                gettext(locale, "Proxy Settings"),
                                 theme::regular(13.0),
                                 palette.secondary,
                             )
@@ -182,7 +184,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, connecting: bool) {
             ui.painter().text(
                 pos2(rect.center().x, rect.bottom() - 24.0),
                 egui::Align2::CENTER_BOTTOM,
-                format!("Spotifast {} • not affiliated with Spotify", env!("CARGO_PKG_VERSION")),
+                // Translators: {version} is the app's version number, such as 1.2.0.
+                gettext(locale, "Spotifast {version} • not affiliated with Spotify")
+                    .replace("{version}", env!("CARGO_PKG_VERSION")),
                 theme::regular(11.5),
                 palette.dim,
             );
@@ -199,7 +203,7 @@ fn proxy_fields(ui: &mut egui::Ui, app: &mut App) {
             .iter()
             .map(|choice| {
                 let galley = ui.painter().layout_no_wrap(
-                    choice.label().to_string(),
+                    choice.label(app.locale).into_owned(),
                     theme::medium(13.0),
                     palette.text,
                 );
@@ -213,7 +217,7 @@ fn proxy_fields(ui: &mut egui::Ui, app: &mut App) {
                 ui,
                 &palette,
                 None,
-                choice.label(),
+                &choice.label(app.locale),
                 app.settings.proxy_mode == choice,
             )
             .clicked()
@@ -230,6 +234,7 @@ fn proxy_fields(ui: &mut egui::Ui, app: &mut App) {
         if super::widgets::proxy_manual_form(
             ui,
             &palette,
+            app.locale,
             &mut app.settings.proxy_host,
             &mut app.settings.proxy_port,
             &mut app.settings.proxy_username,
@@ -238,10 +243,12 @@ fn proxy_fields(ui: &mut egui::Ui, app: &mut App) {
             changed = true;
         }
         ui.add_space(6.0);
-        super::widgets::proxy_scope_note(ui, &palette, app.settings.proxy_mode);
+        super::widgets::proxy_scope_note(ui, &palette, app.locale, app.settings.proxy_mode);
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            if theme::pill_button(ui, &palette, "Apply settings", true).clicked() {
+            if theme::pill_button(ui, &palette, &gettext(app.locale, "Apply settings"), true)
+                .clicked()
+            {
                 apply = true;
             }
         });

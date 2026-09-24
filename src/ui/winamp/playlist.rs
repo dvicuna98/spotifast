@@ -9,6 +9,7 @@ use egui::{Color32, Sense};
 
 use crate::api::models::PlayableItem;
 use crate::app::{App, NowPlaying};
+use crate::i18n::{gettext, pgettext};
 use crate::model::{Action, Page, RowContext};
 use crate::skin::layout::{self, Area};
 use crate::skin::sprites;
@@ -641,22 +642,37 @@ fn menus(app: &mut App, view: &mut View, rows: &[Row], queue_uris: &[String], he
 
 /// Where a song comes from here: the big window's search or Liked Songs.
 fn add_menu(app: &mut App, ui: &mut egui::Ui) {
-    if ui.button("Search Spotify").clicked() {
+    let locale = app.locale;
+    if ui
+        .button(gettext(locale, "Search Spotify").as_ref())
+        .clicked()
+    {
         app.actions.push(Action::FocusSearch);
         app.actions.push(Action::ToggleWinampWindow);
     }
-    if ui.button("Liked Songs").clicked() {
+    if ui.button(gettext(locale, "Liked Songs").as_ref()).clicked() {
         app.actions.push(Action::Open(Page::LikedSongs));
         app.actions.push(Action::ToggleWinampWindow);
     }
 }
 
 fn rem_menu(app: &mut App, ui: &mut egui::Ui) {
-    ui.add_enabled(false, egui::Button::new("Remove selected"))
-        .on_disabled_hover_text("Spotify does not let apps remove one queued song.");
+    let locale = app.locale;
+    ui.add_enabled(
+        false,
+        egui::Button::new(gettext(locale, "Remove selected").as_ref()),
+    )
+    .on_disabled_hover_text(
+        gettext(locale, "Spotify does not let apps remove one queued song.").as_ref(),
+    );
     if ui
-        .add_enabled(app.can_clear_queue(), egui::Button::new("Remove all"))
-        .on_disabled_hover_text("You can only clear this computer's queue.")
+        .add_enabled(
+            app.can_clear_queue(),
+            egui::Button::new(gettext(locale, "Remove all").as_ref()),
+        )
+        .on_disabled_hover_text(
+            gettext(locale, "You can only clear this computer's queue.").as_ref(),
+        )
         .clicked()
     {
         app.actions.push(Action::ClearQueue);
@@ -664,14 +680,21 @@ fn rem_menu(app: &mut App, ui: &mut egui::Ui) {
 }
 
 fn sel_menu(app: &mut App, ui: &mut egui::Ui, rows: &[Row]) {
+    let locale = app.locale;
+    // Translators: Selects every song in the list.
+    let all = pgettext(locale, "selection", "All");
+    // Translators: Clears the selection of songs in the list.
+    let none = pgettext(locale, "selection", "None");
+    // Translators: Selects the songs that are not selected, and clears the rest.
+    let invert = pgettext(locale, "selection", "Invert");
     let selection = &mut app.winamp.playlist_selection;
-    if ui.button("All").clicked() {
+    if ui.button(all.as_ref()).clicked() {
         selection.extend(0..rows.len());
     }
-    if ui.button("None").clicked() {
+    if ui.button(none.as_ref()).clicked() {
         selection.clear();
     }
-    if ui.button("Invert").clicked() {
+    if ui.button(invert.as_ref()).clicked() {
         for index in 0..rows.len() {
             if !selection.remove(&index) {
                 selection.insert(index);
@@ -682,6 +705,7 @@ fn sel_menu(app: &mut App, ui: &mut egui::Ui, rows: &[Row]) {
 
 /// The pages of the selected song, or of the one playing.
 fn misc_menu(app: &mut App, ui: &mut egui::Ui, rows: &[Row]) {
+    let locale = app.locale;
     let chosen = rows
         .iter()
         .enumerate()
@@ -689,17 +713,20 @@ fn misc_menu(app: &mut App, ui: &mut egui::Ui, rows: &[Row]) {
         .map(|(_, row)| row)
         .or_else(|| rows.iter().find(|row| row.current));
     let Some(row) = chosen else {
-        ui.add_enabled(false, egui::Button::new("Song info"));
+        ui.add_enabled(
+            false,
+            egui::Button::new(gettext(locale, "Song info").as_ref()),
+        );
         return;
     };
     if let Some(album) = &row.album_id
-        && ui.button("Song info").clicked()
+        && ui.button(gettext(locale, "Song info").as_ref()).clicked()
     {
         app.actions.push(Action::Open(Page::Album(album.clone())));
         app.actions.push(Action::ToggleWinampWindow);
     }
     if let Some(artist) = &row.artist_id
-        && ui.button("Artist").clicked()
+        && ui.button(gettext(locale, "Artist").as_ref()).clicked()
     {
         app.actions.push(Action::Open(Page::Artist(artist.clone())));
         app.actions.push(Action::ToggleWinampWindow);
@@ -719,14 +746,18 @@ fn list_menu(app: &mut App, ui: &mut egui::Ui, rows: &[Row], queue_uris: &[Strin
                 .collect()
         })
         .unwrap_or_default();
-    ui.menu_button("Load list", |ui| {
+    let locale = app.locale;
+    ui.menu_button(gettext(locale, "Load list").as_ref(), |ui| {
         crate::autoscroll::show(
             ui,
             egui::ScrollArea::vertical().max_height(super::menu_limit(ui)),
             egui::Vec2b::new(false, true),
             |ui| {
                 if playlists.is_empty() {
-                    ui.add_enabled(false, egui::Button::new("No playlists yet"));
+                    ui.add_enabled(
+                        false,
+                        egui::Button::new(gettext(locale, "No playlists yet").as_ref()),
+                    );
                 }
                 for (name, uri) in &playlists {
                     if ui.button(name).clicked() {
@@ -743,8 +774,11 @@ fn list_menu(app: &mut App, ui: &mut egui::Ui, rows: &[Row], queue_uris: &[Strin
     });
     let saveable = !queue_uris.is_empty() || rows.iter().any(|row| row.current);
     if ui
-        .add_enabled(saveable, egui::Button::new("Save list"))
-        .on_hover_text("Save the queue as a new playlist")
+        .add_enabled(
+            saveable,
+            egui::Button::new(gettext(locale, "Save list").as_ref()),
+        )
+        .on_hover_text(gettext(locale, "Save the queue as a new playlist").as_ref())
         .clicked()
     {
         let mut uris: Vec<String> = rows

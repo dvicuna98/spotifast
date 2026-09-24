@@ -23,7 +23,9 @@ if [[ "$mode" == --check ]]; then
 else
     cp "$translation_template" assets/i18n/spotifast.pot
     for catalog in assets/i18n/*.po; do
-        msgmerge --update --backup=none "$catalog" assets/i18n/spotifast.pot
+        # No fuzzy guesses: catalogues may be partial, and an untranslated
+        # message must stay empty so it shows the English source.
+        msgmerge --update --backup=none --no-fuzzy-matching "$catalog" assets/i18n/spotifast.pot
     done
 fi
 for catalog in assets/i18n/*.po; do

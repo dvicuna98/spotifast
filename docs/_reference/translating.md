@@ -4,50 +4,55 @@ description: Help translate Spotifast and preview the work so far.
 nav_order: 6
 ---
 
-**The regular app is currently in English.** Translations are being developed,
-with early previews in 12 languages, including Portuguese and Chinese variants.
-There is no language setting in the regular app yet. Corrections from fluent
-speakers are welcome.
+Spotifast follows your computer's language when it has a translation for it,
+and uses English otherwise. **Settings → Appearance → Language** picks another
+language, listed under its own name, and applies it at once; **System** follows
+the computer again. This arrives in the release after 0.9.2. Corrections from
+fluent speakers are welcome.
 
 Translations are stored in `.po` files, a common format supported by editors
 such as Poedit and Weblate. They are included with Spotifast, so the app does
 not contact an online translation service.
 
-## Pilot scope
+## Languages and coverage
 
-Since 0.8.0, the pilot covers Home and Search navigation, Library
-controls, filters, search hints, and the Liked Songs name and count. These
-languages are available for preview in demo mode, which uses sample music
-data and needs no Spotify account:
+| Language | Tag | Coverage |
+| --- | --- | --- |
+| English | `en` | Source language |
+| Spanish | `es` | Complete |
+| German | `de-DE` | Partial |
+| Dutch | `nl` | Partial |
+| Portuguese (Brazil) | `pt-BR` | Partial |
+| Portuguese (Portugal) | `pt-PT` | Partial |
+| French | `fr` | Partial |
+| Swedish | `sv` | Partial |
+| Polish | `pl` | Partial |
+| Russian | `ru` | Partial |
+| Italian | `it` | Partial |
+| Japanese | `ja` | Partial |
+| Chinese (Simplified) | `zh-Hans` | Partial |
+| Chinese (Traditional) | `zh-Hant` | Partial |
 
-| Language | `--demo-language` |
-| --- | --- |
-| English | `en` |
-| Spanish | `es` |
-| German | `de-DE` |
-| Dutch | `nl` |
-| Portuguese (Brazil) | `pt-BR` |
-| Portuguese (Portugal) | `pt-PT` |
-| French | `fr` |
-| Swedish | `sv` |
-| Polish | `pl` |
-| Russian | `ru` |
-| Italian | `it` |
-| Japanese | `ja` |
-| Chinese (Simplified) | `zh-Hans` |
-| Chinese (Traditional) | `zh-Hant` |
+The interface is marked for translation throughout: navigation, Home, Search,
+Library and collection pages, menus, the player bar, Queue and Lyrics, dialogs,
+keyboard shortcuts, sign-in, Settings and notifications, including tooltips
+and screen-reader names. The partial catalogues translate the earlier pilot:
+navigation, Library controls, the player bar, Queue and Lyrics. Everything they
+do not translate yet appears in English. The tray menu, the macOS menu bar and
+Dock menu, and the Windows taskbar buttons are still English in every language,
+as are error details reported by Spotify, the network or the system.
 
-Current `main` also translates the player bar's empty state, tooltips and
-screen-reader labels for playback, repeat, shuffle, Like, volume, device
-selection, Queue and Lyrics controls. The Queue page and panel, Recent tab,
-Lyrics panel and full-screen view, and shared loading/retry labels are also
-translated on `main`. These additions are not in 0.8.0. They keep the existing
-controls and keyboard actions. Other menus, pages and settings still need coverage.
+A regional system language uses the closest catalogue: `es-MX` and `es-419`
+use Spanish, `de-AT` uses German, `pt-BR` and a plain `pt` use Portuguese
+(Brazil), other Portuguese regions use Portuguese (Portugal), `zh-CN` and
+`zh-SG` use Simplified Chinese, and `zh-TW`, `zh-HK` and `zh-MO` use
+Traditional Chinese. When the system lists several preferred languages, the
+first one with a catalogue wins.
 
 Song, album, artist and playlist names come from Spotify or their creators and
 are kept as provided, as are lyric lines and failure details. Generated queue
 playlist names translate the surrounding words while retaining the song title
-or the date in `YYYY-MM-DD` form. Interface text outside the pilot remains English.
+or the date in `YYYY-MM-DD` form.
 
 ## Edit and preview
 
@@ -58,7 +63,9 @@ keep `msgid`, `msgid_plural`, `msgctxt`, and placeholders such as `{count}`, `{d
 Translator comments explain the placeholders. Clear a fuzzy flag only after
 reviewing the translation against its current English source.
 
-Build and preview your changes with:
+Build and preview your changes in demo mode, which uses sample music data and
+needs no Spotify account. `--demo-language` takes a tag from the table above
+and overrides both the setting and the system language:
 
 ```sh
 cargo run --features demo -- --demo --demo-language es
@@ -68,8 +75,7 @@ cargo run --features demo -- --demo --demo-language ja --demo-show lyrics-follow
 ```
 
 Check a narrow and a normal window, light and dark themes, keyboard navigation,
-and screen-reader names. `--demo-shot PATH` saves the preview and exits. Demo
-data needs no Spotify account. When automating screenshots, give the process
+and screen-reader names. `--demo-shot PATH` saves the preview and exits. When automating screenshots, give the process
 its own XDG config, data and state directories on Linux so framework window and
 scroll state do not carry between captures.
 
@@ -85,7 +91,10 @@ Maintainers mark source phrases with `gettext(locale, "English text")` and whole
 counted phrases with `ngettext(locale, "Singular", "Plural", count)`. Use
 `pgettext(locale, "context", "English text")` when the same English word has
 different meanings. For example, `Follow` in the `lyrics` context follows the
-current lyric line, so its translation can differ from following an artist. Add any
+current lyric line, so its translation can differ from following an artist.
+Interpolate with named placeholders, such as `gettext(locale, "Added {name}")`
+followed by `.replace("{name}", &name)`, and explain each one in a
+`// Translators:` comment above the phrase. Add any
 new source file to `assets/i18n/POTFILES`. With GNU gettext tools that support
 Rust installed, run:
 
@@ -106,15 +115,18 @@ Rust catalogs stay in Cargo's build directory and are not committed.
 Normal application builds need no external gettext tools. The build validates
 the PO files and compiles their translations and plural expressions to Rust.
 Missing, empty, fuzzy, or incomplete plural entries fall back to the full English
-phrase. Each locale's `Plural-Forms` header determines its plural choices;
+phrase, so a catalogue can be published before it is complete. The localization
+test requires completeness only of catalogues that claim it (currently
+Spanish); every catalogue must keep the placeholders of what it translates. Each locale's `Plural-Forms` header determines its plural choices;
 languages are not restricted to two forms.
 
 ## Another language or a correction
 
 Create another PO from the template using your editor's new-translation command,
-or `msginit`. Set its language and plural rules and translate the pilot entries.
-A maintainer must also register the locale in the app and preview it before it
-becomes available. Adding a PO alone does not add a production language option.
+or `msginit`. Set its language and plural rules and translate what you can.
+A maintainer must also register the locale in the app, including how system
+language tags map to it, and preview it before it becomes available. Adding a
+PO alone does not add a language to the Settings list.
 
 Use the [translation problem form](https://github.com/crmne/spotifast/issues/new?template=translation.yml)
 for incorrect wording, missing translations or text that does not fit. Each

@@ -1,8 +1,11 @@
 //! Keyboard shortcuts.
 
+use std::borrow::Cow;
+
 use egui::{Key, Modifiers};
 
 use crate::app::App;
+use crate::i18n::{Locale, gettext, pgettext};
 use crate::model::{Action, Dialog, Page};
 
 pub(super) const fn platform_shortcut<'a>(ctrl: &'a str, cmd: &'a str) -> &'a str {
@@ -178,52 +181,122 @@ pub fn handle(app: &mut App, ctx: &egui::Context) {
     }
 }
 
-pub const SHORTCUTS: &[(&str, &str)] = &[
-    ("Space", "Play or pause"),
-    (
-        platform_shortcut("Ctrl+←  /  Ctrl+→", "Cmd+←  /  Cmd+→"),
-        "Previous or next",
-    ),
-    ("Shift+←  /  Shift+→", "Seek 10 seconds"),
-    (
-        platform_shortcut("Ctrl+↑  /  Ctrl+↓", "Cmd+↑  /  Cmd+↓"),
-        "Volume up or down",
-    ),
-    ("M", "Mute or unmute"),
-    ("B", "Like or unlike the playing song"),
-    ("S", "Toggle shuffle"),
-    ("R", "Cycle repeat"),
-    ("Q", "Show the queue"),
-    ("L", "Show the lyrics"),
-    ("Esc", "Lyrics: leave full screen"),
-    (platform_shortcut("Ctrl+F  or  /", "Cmd+F  or  /"), "Search"),
-    (SIDEBAR_SHORTCUT, "Show or hide the sidebar"),
-    ("Alt+←  /  Alt+→", "Back or forward"),
-    (platform_shortcut("Ctrl+H", "Cmd+Shift+H"), "Home"),
-    (platform_shortcut("Ctrl+L", "Cmd+L"), "Liked Songs"),
-    (
-        platform_shortcut("Ctrl+Shift+A", "Cmd+Shift+A"),
-        "Go to the playing artist",
-    ),
-    (
-        platform_shortcut("Ctrl+Shift+B", "Cmd+Shift+B"),
-        "Go to the playing album",
-    ),
-    (WINAMP_SHORTCUT, "Winamp mini player"),
-    (MILKDROP_SHORTCUT, "MilkDrop, under the mini player"),
-    ("F  or  double-click", "MilkDrop: fill the screen"),
-    ("→  /  N", "MilkDrop: next preset"),
-    ("←  /  P", "MilkDrop: previous preset"),
-    ("L", "MilkDrop: keep this preset"),
-    ("Esc", "MilkDrop: leave full screen, or close"),
-    (platform_shortcut("Ctrl+,", "Cmd+,"), "Settings"),
-    (
-        platform_shortcut("Ctrl+/ or ?", "Cmd+/ or ?"),
-        "Keyboard shortcuts",
-    ),
-    (platform_shortcut("Ctrl+W", "Cmd+W"), "Close the window"),
-    (QUIT_SHORTCUT, "Quit"),
-];
+/// The rows of the keyboard shortcuts dialog: the keys, then what they do.
+/// Key names stay as the keyboard prints them; words around them, and
+/// every description, are translated.
+pub fn shortcuts(locale: Locale) -> Vec<(Cow<'static, str>, Cow<'static, str>)> {
+    let keys = |text: &'static str| Cow::Borrowed(text);
+    vec![
+        (
+            pgettext(locale, "key", "Space"),
+            gettext(locale, "Play or pause"),
+        ),
+        (
+            keys(platform_shortcut("Ctrl+←  /  Ctrl+→", "Cmd+←  /  Cmd+→")),
+            gettext(locale, "Previous or next"),
+        ),
+        (
+            keys("Shift+←  /  Shift+→"),
+            gettext(locale, "Seek 10 seconds"),
+        ),
+        (
+            keys(platform_shortcut("Ctrl+↑  /  Ctrl+↓", "Cmd+↑  /  Cmd+↓")),
+            gettext(locale, "Volume up or down"),
+        ),
+        (keys("M"), gettext(locale, "Mute or unmute")),
+        (
+            keys("B"),
+            gettext(locale, "Like or unlike the playing song"),
+        ),
+        (keys("S"), gettext(locale, "Toggle shuffle")),
+        (keys("R"), gettext(locale, "Cycle repeat")),
+        (keys("Q"), gettext(locale, "Show the queue")),
+        (keys("L"), gettext(locale, "Show the lyrics")),
+        (keys("Esc"), gettext(locale, "Lyrics: leave full screen")),
+        (
+            keys(platform_shortcut("Ctrl+A", "Cmd+A")),
+            gettext(locale, "Song list: select all"),
+        ),
+        (
+            keys(platform_shortcut("Ctrl+C", "Cmd+C")),
+            gettext(locale, "Song list: copy the selected songs' links"),
+        ),
+        (
+            keys(platform_shortcut("Ctrl+V", "Cmd+V")),
+            gettext(locale, "Playlist: add the pasted song links"),
+        ),
+        (
+            if cfg!(target_os = "macos") {
+                // Translators: Keep the key names. Only the word "or" is translated.
+                gettext(locale, "Cmd+F  or  /")
+            } else {
+                // Translators: Keep the key names. Only the word "or" is translated.
+                gettext(locale, "Ctrl+F  or  /")
+            },
+            gettext(locale, "Search"),
+        ),
+        (
+            keys(SIDEBAR_SHORTCUT),
+            gettext(locale, "Show or hide the sidebar"),
+        ),
+        (keys("Alt+←  /  Alt+→"), gettext(locale, "Back or forward")),
+        (
+            keys(platform_shortcut("Ctrl+H", "Cmd+Shift+H")),
+            gettext(locale, "Home"),
+        ),
+        (
+            keys(platform_shortcut("Ctrl+L", "Cmd+L")),
+            gettext(locale, "Liked Songs"),
+        ),
+        (
+            keys(platform_shortcut("Ctrl+Shift+A", "Cmd+Shift+A")),
+            gettext(locale, "Go to the playing artist"),
+        ),
+        (
+            keys(platform_shortcut("Ctrl+Shift+B", "Cmd+Shift+B")),
+            gettext(locale, "Go to the playing album"),
+        ),
+        (keys(WINAMP_SHORTCUT), gettext(locale, "Winamp mini player")),
+        (
+            keys(MILKDROP_SHORTCUT),
+            gettext(locale, "MilkDrop, under the mini player"),
+        ),
+        (
+            // Translators: Keep the key name F. Translate "or" and "double-click".
+            gettext(locale, "F  or  double-click"),
+            gettext(locale, "MilkDrop: fill the screen"),
+        ),
+        (keys("→  /  N"), gettext(locale, "MilkDrop: next preset")),
+        (
+            keys("←  /  P"),
+            gettext(locale, "MilkDrop: previous preset"),
+        ),
+        (keys("L"), gettext(locale, "MilkDrop: keep this preset")),
+        (
+            keys("Esc"),
+            gettext(locale, "MilkDrop: leave full screen, or close"),
+        ),
+        (
+            keys(platform_shortcut("Ctrl+,", "Cmd+,")),
+            gettext(locale, "Settings"),
+        ),
+        (
+            if cfg!(target_os = "macos") {
+                // Translators: Keep the key names. Only the word "or" is translated.
+                gettext(locale, "Cmd+/ or ?")
+            } else {
+                // Translators: Keep the key names. Only the word "or" is translated.
+                gettext(locale, "Ctrl+/ or ?")
+            },
+            gettext(locale, "Keyboard shortcuts"),
+        ),
+        (
+            keys(platform_shortcut("Ctrl+W", "Cmd+W")),
+            gettext(locale, "Close the window"),
+        ),
+        (keys(QUIT_SHORTCUT), gettext(locale, "Quit")),
+    ]
+}
 
 #[cfg(test)]
 mod tests {
@@ -418,18 +491,18 @@ mod tests {
         } else {
             "Cmd+"
         };
-        for (keys, _) in SHORTCUTS {
+        for (keys, _) in shortcuts(Locale::English) {
             assert!(!keys.contains(other), "wrong modifier in {keys}");
         }
     }
 
     #[test]
     fn shortcut_dialog_names_platform_reserved_alternatives() {
-        let label = |description| {
-            SHORTCUTS
-                .iter()
-                .find(|(_, candidate)| *candidate == description)
-                .map(|(keys, _)| *keys)
+        let label = |description: &str| {
+            shortcuts(Locale::English)
+                .into_iter()
+                .find(|(_, candidate)| candidate == description)
+                .map(|(keys, _)| keys)
                 .unwrap()
         };
         if cfg!(target_os = "macos") {

@@ -4,8 +4,9 @@ use egui::{Align, CornerRadius, Frame, Layout, Margin, Stroke, Vec2};
 
 use crate::api::models::pick_image;
 use crate::app::App;
+use crate::i18n::{gettext, ngettext, pgettext};
 use crate::model::{Action, Dialog};
-use crate::settings::{ProxyMode, ThemeChoice};
+use crate::settings::{LanguageChoice, ProxyMode, ThemeChoice};
 use crate::theme::{self, Icon, Palette};
 
 use super::widgets;
@@ -110,8 +111,14 @@ fn section(
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
+    let locale = app.locale;
     ui.add_space(8.0);
-    theme::text(ui, "Settings", theme::bold(28.0), palette.text);
+    theme::text(
+        ui,
+        gettext(locale, "Settings"),
+        theme::bold(28.0),
+        palette.text,
+    );
     ui.add_space(4.0);
     let mut filter = ui
         .data(|data| data.get_temp::<String>(egui::Id::new(SETTINGS_FILTER_ID)))
@@ -119,9 +126,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     widgets::search_field(
         ui,
         &palette,
+        app.locale,
         egui::Id::new("settings-search-field"),
         &mut filter,
-        "Search settings",
+        &gettext(locale, "Search settings"),
         ui.available_width().min(400.0),
     );
     let needle = filter.trim().to_lowercase();
@@ -137,6 +145,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         .unwrap_or(false);
     let mut changed = false;
     let mut any_visible = false;
+    let open_folder = gettext(locale, "Open folder");
 
     let wanted = app
         .settings
@@ -148,34 +157,51 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let in_use = wanted
         .as_deref()
         .is_some_and(|wanted| app.web_app.as_deref() == Some(wanted));
+    let account = gettext(locale, "Account");
+    let sign_out = gettext(locale, "Sign out");
     let account_rows = [
         RowText::new(
-            "Personal Spotify app",
-            "Use a personal Development Mode app for a separate API quota. The shared app stays active.",
+            gettext(locale, "Personal Spotify app"),
+            gettext(
+                locale,
+                "Use a personal Development Mode app for a separate API quota. The shared app stays active.",
+            ),
         ),
         RowText::new(
-            "Create an app",
-            "Create one for free in Spotify's developer dashboard.",
+            gettext(locale, "Create an app"),
+            gettext(
+                locale,
+                "Create one for free in Spotify's developer dashboard.",
+            ),
         )
         .when(!in_use),
         RowText::new(
-            "Personal app ready",
-            "Supported requests use your app. Other requests use the shared app.",
+            gettext(locale, "Personal app ready"),
+            gettext(
+                locale,
+                "Supported requests use your app. Other requests use the shared app.",
+            ),
         )
         .when(in_use),
         RowText::new(
-            "Authorize your personal app",
-            "Spotify opens in your browser to verify the account.",
+            gettext(locale, "Authorize your personal app"),
+            gettext(
+                locale,
+                "Spotify opens in your browser to verify the account.",
+            ),
         )
         .when(!in_use && wanted.is_some()),
-        RowText::new("Remove personal app", "Shared access remains signed in.")
-            .when(!in_use && wanted.is_none() && app.web_app.is_some()),
-        RowText::new("Sign out", "Account"),
+        RowText::new(
+            gettext(locale, "Remove personal app"),
+            gettext(locale, "Shared access remains signed in."),
+        )
+        .when(!in_use && wanted.is_none() && app.web_app.is_some()),
+        RowText::new(sign_out.clone(), account.clone()),
     ];
-    if section_matches(&needle, "Account", &account_rows) {
+    if section_matches(&needle, &account, &account_rows) {
         any_visible = true;
-        section(ui, &palette, "Account", |ui| {
-            if row_matches(&needle, "Sign out Account", "") {
+        section(ui, &palette, &account, |ui| {
+            if row_matches(&needle, &format!("{sign_out} {account}"), "") {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 14.0;
                     let avatar = app
@@ -197,7 +223,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                             .map(|product| match product.as_str() {
                                 "premium" => "Spotify Premium".to_string(),
                                 "free" | "open" => {
-                                    "Spotify Free, local playback needs Premium".to_string()
+                                    gettext(locale, "Spotify Free, local playback needs Premium")
+                                        .into_owned()
                                 }
                                 other => other.to_string(),
                             })
@@ -209,14 +236,16 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         {
                             theme::text(
                                 ui,
-                                format!("Connected as {username}"),
+                                // Translators: {username} is the Spotify account's user name.
+                                gettext(locale, "Connected as {username}")
+                                    .replace("{username}", &username),
                                 theme::regular(12.0),
                                 palette.dim,
                             );
                         }
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if theme::pill_button(ui, &palette, "Sign out", false).clicked() {
+                        if theme::pill_button(ui, &palette, &sign_out, false).clicked() {
                             app.actions.push(Action::SignOut);
                         }
                     });
@@ -224,7 +253,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 ui.add_space(10.0);
             }
             let mut client_id = app.settings.web_client_id.clone().unwrap_or_default();
-            filtered_row(ui, &palette, &needle, "Account", &account_rows[0], |ui| {
+            filtered_row(ui, &palette, &needle, &account, &account_rows[0], |ui| {
                 let response = Frame::new()
                     .fill(palette.surface)
                     .corner_radius(CornerRadius::same(6))
@@ -232,9 +261,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     .show(ui, |ui| {
                         widgets::text_edit(
                             ui,
+                            app.locale,
                             egui::TextEdit::singleline(&mut client_id)
                                 .id(egui::Id::new("personal-web-client-id"))
-                                .hint_text(egui::RichText::new("Client ID").color(palette.dim))
+                                .hint_text(
+                                    egui::RichText::new(gettext(locale, "Client ID"))
+                                        .color(palette.dim),
+                                )
                                 .font(theme::regular(13.0))
                                 .frame(egui::Frame::NONE)
                                 .desired_width(200.0),
@@ -254,29 +287,35 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     changed = true;
                 }
             });
-            filtered_row(ui, &palette, &needle, "Account", &account_rows[1], |ui| {
-                if theme::pill_button(ui, &palette, "Setup guide", false).clicked() {
+            filtered_row(ui, &palette, &needle, &account, &account_rows[1], |ui| {
+                if theme::pill_button(ui, &palette, &gettext(locale, "Setup guide"), false)
+                    .clicked()
+                {
                     app.actions.push(Action::OpenUrl(
                         "https://spotifast.rocks/make-it-even-faster/#make-a-spotify-app".into(),
                     ));
                 }
             });
             if in_use {
-                filtered_row(ui, &palette, &needle, "Account", &account_rows[2], |ui| {
-                    if theme::pill_button(ui, &palette, "Remove", false).clicked() {
+                filtered_row(ui, &palette, &needle, &account, &account_rows[2], |ui| {
+                    if theme::pill_button(ui, &palette, &gettext(locale, "Remove"), false).clicked()
+                    {
                         app.settings.web_client_id = None;
                         app.actions.push(Action::ConfigurePersonalWebApp);
                     }
                 });
             } else if wanted.is_some() {
-                filtered_row(ui, &palette, &needle, "Account", &account_rows[3], |ui| {
-                    if theme::pill_button(ui, &palette, "Authorize", true).clicked() {
+                filtered_row(ui, &palette, &needle, &account, &account_rows[3], |ui| {
+                    if theme::pill_button(ui, &palette, &gettext(locale, "Authorize"), true)
+                        .clicked()
+                    {
                         app.actions.push(Action::ConfigurePersonalWebApp);
                     }
                 });
             } else if app.web_app.is_some() {
-                filtered_row(ui, &palette, &needle, "Account", &account_rows[4], |ui| {
-                    if theme::pill_button(ui, &palette, "Remove", false).clicked() {
+                filtered_row(ui, &palette, &needle, &account, &account_rows[4], |ui| {
+                    if theme::pill_button(ui, &palette, &gettext(locale, "Remove"), false).clicked()
+                    {
                         app.actions.push(Action::ConfigurePersonalWebApp);
                     }
                 });
@@ -286,408 +325,424 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
     let (status, detail, action) = match &app.local_playback {
         crate::backend::LocalPlayback::Ready { .. } => (
-            "Ready",
-            "This computer is a Spotify Connect device.".to_string(),
+            pgettext(locale, "playback status", "Ready"),
+            gettext(locale, "This computer is a Spotify Connect device."),
             None,
         ),
         crate::backend::LocalPlayback::Authorizing => (
-            "Setting up",
-            "Finish authorizing in your browser.".to_string(),
+            pgettext(locale, "playback status", "Setting up"),
+            gettext(locale, "Finish authorizing in your browser."),
             None,
         ),
-        crate::backend::LocalPlayback::Connecting => {
-            ("Connecting", "Connecting to Spotify…".to_string(), None)
-        }
-        crate::backend::LocalPlayback::Failed(message) => {
-            ("Unavailable", message.clone(), Some("Try again"))
-        }
+        crate::backend::LocalPlayback::Connecting => (
+            pgettext(locale, "playback status", "Connecting"),
+            gettext(locale, "Connecting to Spotify…"),
+            None,
+        ),
+        crate::backend::LocalPlayback::Failed(message) => (
+            pgettext(locale, "playback status", "Unavailable"),
+            message.clone().into(),
+            Some(gettext(locale, "Try again")),
+        ),
         crate::backend::LocalPlayback::Unavailable => (
-            "Not set up",
-            "Requires Spotify Premium and a one-time browser sign-in.".to_string(),
-            Some("Enable playback here"),
+            pgettext(locale, "playback status", "Not set up"),
+            gettext(
+                locale,
+                "Requires Spotify Premium and a one-time browser sign-in.",
+            ),
+            Some(gettext(locale, "Enable playback here")),
         ),
     };
+    let playback = gettext(locale, "Playback on this computer");
+    let normalize_volume = gettext(locale, "Normalize volume");
+    let autoplay = gettext(locale, "Autoplay");
+    let gapless = gettext(locale, "Gapless playback");
+    let keep_playing = gettext(locale, "Keep music playing when the window closes");
+    let update_checks = gettext(locale, "Automatic update checks");
+    let audio_cache = gettext(locale, "Audio cache");
+    let apply_playback = gettext(locale, "Apply and restart playback");
+    let apply_playback_note = gettext(locale, "Restart local playback to apply these settings.");
+    let download_updates = gettext(locale, "Download updates automatically");
     let playback_rows = [
-        RowText::new(format!("Status: {status}"), &detail),
-        RowText::new("Device name", "How this computer appears in Spotify Connect."),
-        RowText::new("Audio quality", "Higher bitrates use more data and cache space."),
-        RowText::new("Normalize volume", "Keep loud and quiet tracks at a similar level."),
-        RowText::new("Autoplay", "Keep playing similar songs when your music ends."),
-        RowText::new("Gapless playback", "Play tracks without silence between them."),
-        RowText::new("Keep music playing when the window closes", super::keys::platform_shortcut(
+        RowText::new(
+            // Translators: {status} is a playback state such as Ready or Not set up.
+            gettext(locale, "Status: {status}").replace("{status}", &status),
+            detail,
+        ),
+        RowText::new(
+            gettext(locale, "Device name"),
+            gettext(locale, "How this computer appears in Spotify Connect."),
+        ),
+        RowText::new(
+            gettext(locale, "Audio quality"),
+            gettext(locale, "Higher bitrates use more data and cache space."),
+        ),
+        RowText::new(
+            normalize_volume.clone(),
+            gettext(locale, "Keep loud and quiet tracks at a similar level."),
+        ),
+        RowText::new(
+            autoplay.clone(),
+            gettext(locale, "Keep playing similar songs when your music ends."),
+        ),
+        RowText::new(
+            gapless.clone(),
+            gettext(locale, "Play tracks without silence between them."),
+        ),
+        RowText::new(
+            keep_playing.clone(),
+            super::keys::platform_shortcut(
+                &gettext(
+                    locale,
                     "Spotifast hides to the system tray. Quit from the tray menu or with Ctrl+Q.",
+                ),
+                &gettext(
+                    locale,
                     "Spotifast hides to the system tray. Quit from the tray menu or with Cmd+Q.",
-                )),
-        RowText::new("Automatic update checks", "Checks GitHub once a day. No personal data is sent."),
-        RowText::new("Audio output", "PulseAudio also covers PipeWire. Rodio talks to ALSA directly.").when(cfg!(target_os = "linux")),
-        RowText::new("Output buffer", "More buffering can prevent clicks on busy computers. Less buffering makes controls respond sooner.").when(cfg!(windows)),
-        RowText::new("Audio cache", "Save downloaded audio for later playback."),
-        RowText::new("Apply and restart playback", "Restart local playback to apply these settings.").when(playback_dirty),
-        RowText::new("Playback settings applied", "").when(!playback_dirty),
-        RowText::new("Download updates automatically", "Downloads in the background. You choose when to restart.")
+                ),
+            )
+            .to_owned(),
+        ),
+        RowText::new(
+            update_checks.clone(),
+            gettext(locale, "Checks GitHub once a day. No personal data is sent."),
+        ),
+        RowText::new(
+            gettext(locale, "Audio output"),
+            gettext(
+                locale,
+                "PulseAudio also covers PipeWire. Rodio talks to ALSA directly.",
+            ),
+        )
+        .when(cfg!(target_os = "linux")),
+        RowText::new(
+            gettext(locale, "Output buffer"),
+            gettext(
+                locale,
+                "More buffering can prevent clicks on busy computers. Less buffering makes controls respond sooner.",
+            ),
+        )
+        .when(cfg!(windows)),
+        RowText::new(
+            audio_cache.clone(),
+            gettext(locale, "Save downloaded audio for later playback."),
+        ),
+        RowText::new(apply_playback.clone(), apply_playback_note.clone()).when(playback_dirty),
+        RowText::new(gettext(locale, "Playback settings applied"), "").when(!playback_dirty),
+        RowText::new(
+            download_updates.clone(),
+            gettext(
+                locale,
+                "Downloads in the background. You choose when to restart.",
+            ),
+        ),
     ];
-    if section_matches(&needle, "Playback on this computer", &playback_rows) {
+    if section_matches(&needle, &playback, &playback_rows) {
         any_visible = true;
-        section(ui, &palette, "Playback on this computer", |ui| {
-            filtered_row(
-                ui,
-                &palette,
-                &needle,
-                "Playback on this computer",
-                &playback_rows[0],
-                |ui| {
-                    if let Some(label) = action {
-                        if theme::pill_button(ui, &palette, label, true).clicked() {
-                            app.actions.push(Action::EnablePlayback);
-                        }
-                    } else if app.local_ready
-                        && theme::soft_button(ui, &palette, Some(Icon::Refresh), "Reconnect", false)
-                            .clicked()
-                    {
-                        app.actions.push(Action::RestartEngine);
+        section(ui, &palette, &playback, |ui| {
+            filtered_row(ui, &palette, &needle, &playback, &playback_rows[0], |ui| {
+                if let Some(label) = action {
+                    if theme::pill_button(ui, &palette, &label, true).clicked() {
+                        app.actions.push(Action::EnablePlayback);
                     }
-                },
-            );
-            filtered_row(
-                ui,
-                &palette,
-                &needle,
-                "Playback on this computer",
-                &playback_rows[1],
-                |ui| {
-                    let response = Frame::new()
-                        .fill(palette.surface)
-                        .corner_radius(CornerRadius::same(6))
-                        .inner_margin(Margin::symmetric(10, 6))
-                        .show(ui, |ui| {
-                            widgets::text_edit(
-                                ui,
-                                egui::TextEdit::singleline(&mut app.settings.device_name)
-                                    .font(theme::regular(14.0))
-                                    .frame(egui::Frame::NONE)
-                                    .desired_width(200.0),
-                            )
-                        })
-                        .inner;
-                    if response.changed() {
+                } else if app.local_ready
+                    && theme::soft_button(
+                        ui,
+                        &palette,
+                        Some(Icon::Refresh),
+                        &gettext(locale, "Reconnect"),
+                        false,
+                    )
+                    .clicked()
+                {
+                    app.actions.push(Action::RestartEngine);
+                }
+            });
+            filtered_row(ui, &palette, &needle, &playback, &playback_rows[1], |ui| {
+                let response = Frame::new()
+                    .fill(palette.surface)
+                    .corner_radius(CornerRadius::same(6))
+                    .inner_margin(Margin::symmetric(10, 6))
+                    .show(ui, |ui| {
+                        widgets::text_edit(
+                            ui,
+                            locale,
+                            egui::TextEdit::singleline(&mut app.settings.device_name)
+                                .font(theme::regular(14.0))
+                                .frame(egui::Frame::NONE)
+                                .desired_width(200.0),
+                        )
+                    })
+                    .inner;
+                if response.changed() {
+                    changed = true;
+                    playback_dirty = true;
+                }
+            });
+            filtered_row(ui, &palette, &needle, &playback, &playback_rows[2], |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    for (kbps, label) in [
+                        (320u16, gettext(locale, "Very high · 320 kbps")),
+                        (160, gettext(locale, "High · 160 kbps")),
+                        (96, gettext(locale, "Normal · 96 kbps")),
+                    ] {
+                        if theme::soft_button(
+                            ui,
+                            &palette,
+                            None,
+                            &label,
+                            app.settings.bitrate == kbps,
+                        )
+                        .clicked()
+                            && app.settings.bitrate != kbps
+                        {
+                            app.settings.bitrate = kbps;
+                            changed = true;
+                            playback_dirty = true;
+                        }
+                    }
+                });
+            });
+            filtered_row(ui, &palette, &needle, &playback, &playback_rows[3], |ui| {
+                if widgets::switch(
+                    ui,
+                    &palette,
+                    &normalize_volume,
+                    &mut app.settings.normalisation,
+                )
+                .changed()
+                {
+                    changed = true;
+                    playback_dirty = true;
+                }
+            });
+            filtered_row(ui, &palette, &needle, &playback, &playback_rows[4], |ui| {
+                if widgets::switch(ui, &palette, &autoplay, &mut app.settings.autoplay).changed() {
+                    changed = true;
+                    playback_dirty = true;
+                }
+            });
+            filtered_row(ui, &palette, &needle, &playback, &playback_rows[5], |ui| {
+                if widgets::switch(ui, &palette, &gapless, &mut app.settings.gapless).changed() {
+                    changed = true;
+                    playback_dirty = true;
+                }
+            });
+            filtered_row(ui, &palette, &needle, &playback, &playback_rows[6], |ui| {
+                if widgets::switch(
+                    ui,
+                    &palette,
+                    &keep_playing,
+                    &mut app.settings.keep_playing_in_background,
+                )
+                .changed()
+                {
+                    changed = true;
+                }
+            });
+            filtered_row(ui, &palette, &needle, &playback, &playback_rows[7], |ui| {
+                if widgets::switch(
+                    ui,
+                    &palette,
+                    &update_checks,
+                    &mut app.settings.check_for_updates,
+                )
+                .changed()
+                {
+                    changed = true;
+                }
+            });
+            filtered_row(ui, &palette, &needle, &playback, &playback_rows[13], |ui| {
+                if widgets::switch(
+                    ui,
+                    &palette,
+                    &download_updates,
+                    &mut app.settings.download_updates_automatically,
+                )
+                .changed()
+                {
+                    changed = true;
+                }
+            });
+            if cfg!(target_os = "linux") {
+                filtered_row(ui, &palette, &needle, &playback, &playback_rows[8], |ui| {
+                    let current = app
+                        .settings
+                        .platform_backend()
+                        .unwrap_or_else(|| "rodio".into());
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                        for backend in ["rodio", "pulseaudio"] {
+                            let label = if backend == "pulseaudio" {
+                                "PulseAudio / PipeWire"
+                            } else {
+                                "ALSA (rodio)"
+                            };
+                            if theme::soft_button(ui, &palette, None, label, current == backend)
+                                .clicked()
+                                && current != backend
+                            {
+                                app.settings.audio_backend = Some(backend.to_string());
+                                changed = true;
+                                playback_dirty = true;
+                            }
+                        }
+                    });
+                });
+            }
+            #[cfg(windows)]
+            filtered_row(ui, &palette, &needle, &playback, &playback_rows[9], |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    let current = app.settings.audio_buffer_ms;
+                    for ms in [50u32, 100, 200] {
+                        let label = format!("{ms} ms");
+                        if theme::soft_button(ui, &palette, None, &label, current == ms).clicked()
+                            && current != ms
+                        {
+                            app.settings.audio_buffer_ms = ms;
+                            changed = true;
+                            playback_dirty = true;
+                        }
+                    }
+                });
+            });
+            filtered_row(ui, &palette, &needle, &playback, &playback_rows[10], |ui| {
+                // The control area lays out right-to-left: add the rightmost item first.
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    if widgets::switch(ui, &palette, &audio_cache, &mut app.settings.audio_cache)
+                        .changed()
+                    {
                         changed = true;
                         playback_dirty = true;
                     }
-                },
-            );
-            filtered_row(
-                ui,
-                &palette,
-                &needle,
-                "Playback on this computer",
-                &playback_rows[2],
-                |ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 6.0;
-                        for (kbps, label) in [
-                            (320u16, "Very high · 320 kbps"),
-                            (160, "High · 160 kbps"),
-                            (96, "Normal · 96 kbps"),
-                        ] {
+                    if app.settings.audio_cache {
+                        ui.add_space(6.0);
+                        for (mb, label) in [(4096u64, "4 GB"), (1024, "1 GB"), (512, "512 MB")] {
                             if theme::soft_button(
                                 ui,
                                 &palette,
                                 None,
                                 label,
-                                app.settings.bitrate == kbps,
+                                app.settings.audio_cache_mb == mb,
                             )
                             .clicked()
-                                && app.settings.bitrate != kbps
+                                && app.settings.audio_cache_mb != mb
                             {
-                                app.settings.bitrate = kbps;
+                                app.settings.audio_cache_mb = mb;
                                 changed = true;
                                 playback_dirty = true;
                             }
                         }
-                    });
-                },
-            );
-            filtered_row(
-                ui,
-                &palette,
-                &needle,
-                "Playback on this computer",
-                &playback_rows[3],
-                |ui| {
-                    if widgets::switch(
-                        ui,
-                        &palette,
-                        "Normalize volume",
-                        &mut app.settings.normalisation,
-                    )
-                    .changed()
-                    {
-                        changed = true;
-                        playback_dirty = true;
                     }
-                },
-            );
-            filtered_row(
-                ui,
-                &palette,
-                &needle,
-                "Playback on this computer",
-                &playback_rows[4],
-                |ui| {
-                    if widgets::switch(ui, &palette, "Autoplay", &mut app.settings.autoplay)
-                        .changed()
-                    {
-                        changed = true;
-                        playback_dirty = true;
-                    }
-                },
-            );
-            filtered_row(
-                ui,
-                &palette,
-                &needle,
-                "Playback on this computer",
-                &playback_rows[5],
-                |ui| {
-                    if widgets::switch(ui, &palette, "Gapless playback", &mut app.settings.gapless)
-                        .changed()
-                    {
-                        changed = true;
-                        playback_dirty = true;
-                    }
-                },
-            );
-            filtered_row(
-                ui,
-                &palette,
-                &needle,
-                "Playback on this computer",
-                &playback_rows[6],
-                |ui| {
-                    if widgets::switch(
-                        ui,
-                        &palette,
-                        "Keep music playing when the window closes",
-                        &mut app.settings.keep_playing_in_background,
-                    )
-                    .changed()
-                    {
-                        changed = true;
-                    }
-                },
-            );
-            filtered_row(
-                ui,
-                &palette,
-                &needle,
-                "Playback on this computer",
-                &playback_rows[7],
-                |ui| {
-                    if widgets::switch(
-                        ui,
-                        &palette,
-                        "Automatic update checks",
-                        &mut app.settings.check_for_updates,
-                    )
-                    .changed()
-                    {
-                        changed = true;
-                    }
-                },
-            );
-            filtered_row(
-                ui,
-                &palette,
-                &needle,
-                "Playback on this computer",
-                &playback_rows[13],
-                |ui| {
-                    if widgets::switch(
-                        ui,
-                        &palette,
-                        "Download updates automatically",
-                        &mut app.settings.download_updates_automatically,
-                    )
-                    .changed()
-                    {
-                        changed = true;
-                    }
-                },
-            );
-            if cfg!(target_os = "linux") {
-                filtered_row(
-                    ui,
-                    &palette,
-                    &needle,
-                    "Playback on this computer",
-                    &playback_rows[8],
-                    |ui| {
-                        let current = app
-                            .settings
-                            .platform_backend()
-                            .unwrap_or_else(|| "rodio".into());
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 6.0;
-                            for backend in ["rodio", "pulseaudio"] {
-                                let label = if backend == "pulseaudio" {
-                                    "PulseAudio / PipeWire"
-                                } else {
-                                    "ALSA (rodio)"
-                                };
-                                if theme::soft_button(ui, &palette, None, label, current == backend)
-                                    .clicked()
-                                    && current != backend
-                                {
-                                    app.settings.audio_backend = Some(backend.to_string());
-                                    changed = true;
-                                    playback_dirty = true;
-                                }
-                            }
-                        });
-                    },
-                );
-            }
-            #[cfg(windows)]
-            filtered_row(
-                ui,
-                &palette,
-                &needle,
-                "Playback on this computer",
-                &playback_rows[9],
-                |ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 6.0;
-                        let current = app.settings.audio_buffer_ms;
-                        for ms in [50u32, 100, 200] {
-                            let label = format!("{ms} ms");
-                            if theme::soft_button(ui, &palette, None, &label, current == ms)
-                                .clicked()
-                                && current != ms
-                            {
-                                app.settings.audio_buffer_ms = ms;
-                                changed = true;
-                                playback_dirty = true;
-                            }
-                        }
-                    });
-                },
-            );
-            filtered_row(
-                ui,
-                &palette,
-                &needle,
-                "Playback on this computer",
-                &playback_rows[10],
-                |ui| {
-                    // The control area lays out right-to-left: add the rightmost item first.
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 6.0;
-                        if widgets::switch(
-                            ui,
-                            &palette,
-                            "Audio cache",
-                            &mut app.settings.audio_cache,
-                        )
-                        .changed()
-                        {
-                            changed = true;
-                            playback_dirty = true;
-                        }
-                        if app.settings.audio_cache {
-                            ui.add_space(6.0);
-                            for (mb, label) in [(4096u64, "4 GB"), (1024, "1 GB"), (512, "512 MB")]
-                            {
-                                if theme::soft_button(
-                                    ui,
-                                    &palette,
-                                    None,
-                                    label,
-                                    app.settings.audio_cache_mb == mb,
-                                )
-                                .clicked()
-                                    && app.settings.audio_cache_mb != mb
-                                {
-                                    app.settings.audio_cache_mb = mb;
-                                    changed = true;
-                                    playback_dirty = true;
-                                }
-                            }
-                        }
-                    });
-                },
-            );
+                });
+            });
             ui.add_space(4.0);
             if playback_dirty
-                || playback_rows[11].matches(&needle, "Playback on this computer")
-                || playback_rows[12].matches(&needle, "Playback on this computer")
+                || playback_rows[11].matches(&needle, &playback)
+                || playback_rows[12].matches(&needle, &playback)
             {
                 ui.horizontal(|ui| {
                     if playback_dirty {
-                        if theme::pill_button(ui, &palette, "Apply and restart playback", true)
-                            .clicked()
-                        {
+                        if theme::pill_button(ui, &palette, &apply_playback, true).clicked() {
                             app.actions.push(Action::RestartEngine);
                             playback_dirty = false;
                         }
-                        theme::subtle(
-                            ui,
-                            &palette,
-                            "Restart local playback to apply these settings.",
-                        );
+                        theme::subtle(ui, &palette, &apply_playback_note);
                     } else {
-                        theme::subtle(ui, &palette, "Playback settings applied.");
+                        theme::subtle(ui, &palette, &gettext(locale, "Playback settings applied."));
                     }
                 });
             }
         });
     }
 
+    let appearance = gettext(locale, "Appearance");
+    let theme_title = gettext(locale, "Theme");
+    let accent_from_art = gettext(locale, "Colour from album art");
+    let sidebar_compact = gettext(locale, "Compact library sidebar");
+    let tracklist_compact = gettext(locale, "Compact track list");
+    let middle_click = gettext(locale, "Middle-click autoscroll");
+    let custom_titlebar = gettext(locale, "Custom title bar");
     let appearance_rows = [
-        RowText::new("Theme", {
+        RowText::new(theme_title.clone(), {
             let detail = app
                 .custom_themes
-                .detail(app.settings.custom_theme.as_deref());
+                .detail_in(locale, app.settings.custom_theme.as_deref());
             if !detail.is_empty() {
-                detail.to_owned()
+                detail
             } else if app.custom_themes.follows_omarchy() {
-                "Follow system uses your Omarchy colours.".to_owned()
+                gettext(locale, "Follow system uses your Omarchy colours.")
             } else {
-                "Follow system uses your desktop's light or dark appearance.".to_owned()
+                gettext(
+                    locale,
+                    "Follow system uses your desktop's light or dark appearance.",
+                )
             }
         }),
         RowText::new(
-            "Colour from album art",
-            "Use the current cover's colour on pages and the player bar.",
-        ),
-        RowText::new(
-            "Compact library sidebar",
-            "Show names without covers in the sidebar.",
-        ),
-        RowText::new(
-            "Compact track list",
-            "Show each track on one line without a cover.",
-        ),
-        RowText::new(
-            "Interface zoom",
-            super::keys::platform_shortcut(
-                "Ctrl+Plus and Ctrl+Minus work anywhere; Ctrl+0 resets.",
-                "Cmd+Plus and Cmd+Minus work anywhere; Cmd+0 resets.",
+            gettext(locale, "Language"),
+            gettext(
+                locale,
+                "System follows your computer's language. Untranslated text stays in English.",
             ),
         ),
         RowText::new(
-            "Custom title bar",
-            "Draw Spotifast's own title bar and window buttons instead of the standard Windows ones.",
+            accent_from_art.clone(),
+            gettext(
+                locale,
+                "Use the current cover's colour on pages and the player bar.",
+            ),
+        ),
+        RowText::new(
+            sidebar_compact.clone(),
+            gettext(locale, "Show names without covers in the sidebar."),
+        ),
+        RowText::new(
+            tracklist_compact.clone(),
+            gettext(locale, "Show each track on one line without a cover."),
+        ),
+        RowText::new(
+            gettext(locale, "Interface zoom"),
+            super::keys::platform_shortcut(
+                &gettext(
+                    locale,
+                    "Ctrl+Plus and Ctrl+Minus work anywhere; Ctrl+0 resets.",
+                ),
+                &gettext(
+                    locale,
+                    "Cmd+Plus and Cmd+Minus work anywhere; Cmd+0 resets.",
+                ),
+            )
+            .to_owned(),
+        ),
+        RowText::new(
+            middle_click.clone(),
+            gettext(
+                locale,
+                "Middle-click a list, then move the pointer to scroll it. Off by default, because a middle click usually pastes on Linux.",
+            ),
+        )
+        .when(cfg!(target_os = "linux")),
+        RowText::new(
+            custom_titlebar.clone(),
+            gettext(
+                locale,
+                "Draw Spotifast's own title bar and window buttons instead of the standard Windows ones.",
+            ),
         )
         .when(app.windows_controls_visible()),
     ];
-    if section_matches(&needle, "Appearance", &appearance_rows) {
+    if section_matches(&needle, &appearance, &appearance_rows) {
         any_visible = true;
-        section(ui, &palette, "Appearance", |ui| {
+        section(ui, &palette, &appearance, |ui| {
             filtered_row(
                 ui,
                 &palette,
                 &needle,
-                "Appearance",
+                &appearance,
                 &appearance_rows[0],
                 |ui| {
                     ui.with_layout(Layout::top_down(Align::Max), |ui| {
@@ -695,10 +750,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                             .settings
                             .custom_theme
                             .as_deref()
-                            .map(theme::custom::label)
-                            .unwrap_or_else(|| app.settings.theme.label());
+                            .map(|filename| theme::custom::label(filename).into())
+                            .unwrap_or_else(|| app.settings.theme.label(locale));
                         let response = egui::ComboBox::from_id_salt("appearance_theme")
-                            .selected_text(selected)
+                            .selected_text(selected.as_ref())
                             .width(200.0_f32.min(ui.available_width()))
                             .show_ui(ui, |ui| {
                                 for choice in ThemeChoice::ALL {
@@ -706,7 +761,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                                         .selectable_label(
                                             app.settings.custom_theme.is_none()
                                                 && app.settings.theme == choice,
-                                            choice.label(),
+                                            choice.label(locale).as_ref(),
                                         )
                                         .clicked()
                                     {
@@ -734,16 +789,16 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                             let mut info = egui::WidgetInfo::labeled(
                                 egui::WidgetType::ComboBox,
                                 ui.is_enabled(),
-                                "Theme",
+                                theme_title.as_ref(),
                             );
-                            info.current_text_value = Some(selected.to_owned());
+                            info.current_text_value = Some(selected.to_string());
                             info
                         });
                         if theme::soft_button(
                             ui,
                             &palette,
                             Some(Icon::ExternalLink),
-                            "Open themes folder",
+                            &gettext(locale, "Open themes folder"),
                             false,
                         )
                         .clicked()
@@ -757,13 +812,21 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 ui,
                 &palette,
                 &needle,
-                "Appearance",
+                &appearance,
                 &appearance_rows[1],
+                |ui| language_picker(app, ui),
+            );
+            filtered_row(
+                ui,
+                &palette,
+                &needle,
+                &appearance,
+                &appearance_rows[2],
                 |ui| {
                     if widgets::switch(
                         ui,
                         &palette,
-                        "Colour from album art",
+                        &accent_from_art,
                         &mut app.settings.accent_from_art,
                     )
                     .changed()
@@ -776,13 +839,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 ui,
                 &palette,
                 &needle,
-                "Appearance",
-                &appearance_rows[2],
+                &appearance,
+                &appearance_rows[3],
                 |ui| {
                     if widgets::switch(
                         ui,
                         &palette,
-                        "Compact library sidebar",
+                        &sidebar_compact,
                         &mut app.settings.sidebar_compact,
                     )
                     .changed()
@@ -795,13 +858,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 ui,
                 &palette,
                 &needle,
-                "Appearance",
-                &appearance_rows[3],
+                &appearance,
+                &appearance_rows[4],
                 |ui| {
                     if widgets::switch(
                         ui,
                         &palette,
-                        "Compact track list",
+                        &tracklist_compact,
                         &mut app.settings.tracklist_compact,
                     )
                     .changed()
@@ -814,8 +877,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 ui,
                 &palette,
                 &needle,
-                "Appearance",
-                &appearance_rows[4],
+                &appearance,
+                &appearance_rows[5],
                 |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 6.0;
@@ -840,17 +903,37 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     });
                 },
             );
+            if cfg!(target_os = "linux") {
+                filtered_row(
+                    ui,
+                    &palette,
+                    &needle,
+                    &appearance,
+                    &appearance_rows[6],
+                    |ui| {
+                        if widgets::switch(
+                            ui,
+                            &palette,
+                            &middle_click,
+                            &mut app.settings.middle_click_autoscroll,
+                        )
+                        .changed()
+                        {
+                            changed = true;
+                        }
+                    },
+                );
+            }
             if app.windows_controls_visible() {
                 filtered_row(
                     ui,
                     &palette,
                     &needle,
-                    "Appearance",
-                    &appearance_rows[5],
+                    &appearance,
+                    &appearance_rows[7],
                     |ui| {
                         let mut custom = app.settings.custom_titlebar;
-                        if widgets::switch(ui, &palette, "Custom title bar", &mut custom).changed()
-                        {
+                        if widgets::switch(ui, &palette, &custom_titlebar, &mut custom).changed() {
                             app.actions.push(Action::SetCustomTitlebar(custom));
                         }
                     },
@@ -859,19 +942,26 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         });
     }
 
+    let proxy = gettext(locale, "Proxy");
     let proxy_rows = [RowText::new(
-        "Mode, host, port, username and password",
-        "Off, System, HTTP or SOCKS5 proxy for network requests.",
+        gettext(locale, "Mode, host, port, username and password"),
+        gettext(
+            locale,
+            "Off, System, HTTP or SOCKS5 proxy for network requests.",
+        ),
     )];
-    if section_matches(&needle, "Proxy", &proxy_rows) {
+    if section_matches(&needle, &proxy, &proxy_rows) {
         any_visible = true;
         ui.push_id("proxy-settings", |ui| {
-    section(ui, &palette, "Proxy", |ui| {
+    section(ui, &palette, &proxy, |ui| {
         widgets::setting_row(
             ui,
             &palette,
-            "Mode",
-            "Off ignores environment variables. System uses them, and the OS proxy on macOS and Windows.",
+            &pgettext(locale, "proxy", "Mode"),
+            &gettext(
+                locale,
+                "Off ignores environment variables. System uses them, and the OS proxy on macOS and Windows.",
+            ),
             |_| {},
         );
         // The row's control slot is right-to-left and too narrow for four
@@ -883,7 +973,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     ui,
                     &palette,
                     None,
-                    choice.label(),
+                    &choice.label(locale),
                     app.settings.proxy_mode == choice,
                 )
                 .clicked()
@@ -906,6 +996,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             if widgets::proxy_manual_form(
                 ui,
                 &palette,
+                app.locale,
                 &mut app.settings.proxy_host,
                 &mut app.settings.proxy_port,
                 &mut app.settings.proxy_username,
@@ -916,12 +1007,12 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 proxy_dirty = true;
             }
             ui.add_space(6.0);
-            widgets::proxy_scope_note(ui, &palette, app.settings.proxy_mode);
+            widgets::proxy_scope_note(ui, &palette, app.locale, app.settings.proxy_mode);
             ui.add_space(10.0);
         }
         if app.settings.proxy_mode.is_manual() {
             ui.horizontal(|ui| {
-                if theme::pill_button(ui, &palette, "Apply settings", true).clicked() {
+                if theme::pill_button(ui, &palette, &gettext(locale, "Apply settings"), true).clicked() {
                     app.actions.push(Action::ApplyProxy);
                     if app.settings.proxy_config().is_ok() {
                         proxy_dirty = false;
@@ -932,10 +1023,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             theme::subtle(
                 ui,
                 &palette,
-                match app.settings.proxy_mode {
-                    ProxyMode::Off => "Not using a proxy.",
-                    ProxyMode::System => "Using the system proxy.",
-                    ProxyMode::Http | ProxyMode::Socks => "",
+                &match app.settings.proxy_mode {
+                    ProxyMode::Off => gettext(locale, "Not using a proxy."),
+                    ProxyMode::System => gettext(locale, "Using the system proxy."),
+                    ProxyMode::Http | ProxyMode::Socks => "".into(),
                 },
             );
         }
@@ -945,37 +1036,55 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
     let skins_folder = app.dirs.skins_dir();
     app.winamp.refresh_choices(&skins_folder);
+    let skins = gettext(locale, "Winamp skins");
+    let always_on_top = gettext(locale, "Always on top");
+    let show_in_taskbar = gettext(locale, "Show Winamp in taskbar");
     let skins_rows = [
         RowText::new(
-            "Mini player",
+            gettext(locale, "Mini player"),
             super::keys::platform_shortcut(
-                "Use classic Winamp .wsz skins. Press Ctrl+M or click the skin logo to return. Drop a skin on either window to add it.",
-                "Use classic Winamp .wsz skins. Press Cmd+Shift+M or click the skin logo to return. Drop a skin on either window to add it.",
-            ),
+                &gettext(
+                    locale,
+                    "Use classic Winamp .wsz skins. Press Ctrl+M or click the skin logo to return. Drop a skin on either window to add it.",
+                ),
+                &gettext(
+                    locale,
+                    "Use classic Winamp .wsz skins. Press Cmd+Shift+M or click the skin logo to return. Drop a skin on either window to add it.",
+                ),
+            )
+            .to_owned(),
         ),
         RowText::new(
-            "Skin",
-            format!(
-                "Installed skins are in {}. Find more at the Winamp Skin Museum.",
-                skins_folder.display()
-            ),
+            gettext(locale, "Skin"),
+            gettext(
+                locale,
+                // Translators: {folder} is the path of the skins folder.
+                "Installed skins are in {folder}. Find more at the Winamp Skin Museum.",
+            )
+            .replace("{folder}", &skins_folder.display().to_string()),
         ),
-        RowText::new("Size", "Whole-number scaling keeps skin pixels sharp."),
         RowText::new(
-            "Always on top",
+            gettext(locale, "Size"),
+            gettext(locale, "Whole-number scaling keeps skin pixels sharp."),
+        ),
+        RowText::new(
+            always_on_top.clone(),
             if app.window_level_supported {
-                "Keep the Winamp window above everything else."
+                gettext(locale, "Keep the Winamp window above everything else.")
             } else {
-                crate::window::ON_TOP_UNAVAILABLE
+                crate::window::on_top_unavailable(locale)
             },
         ),
         RowText::new(
-            "Show in taskbar",
-            "Keep a taskbar button for the mini player. The tray icon stays available when hidden.",
+            gettext(locale, "Show in taskbar"),
+            gettext(
+                locale,
+                "Keep a taskbar button for the mini player. The tray icon stays available when hidden.",
+            ),
         )
-        .when(app.windows_controls_visible()),
+        .when(app.taskbar_setting_visible()),
         RowText::new(
-            "Installed skins",
+            gettext(locale, "Installed skins"),
             app.winamp
                 .choices
                 .iter()
@@ -984,54 +1093,46 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 .join(" "),
         ),
     ];
-    if section_matches(&needle, "Winamp skins", &skins_rows) {
+    if section_matches(&needle, &skins, &skins_rows) {
         any_visible = true;
-        section(ui, &palette, "Winamp skins", |ui| {
-            filtered_row(
-                ui,
-                &palette,
-                &needle,
-                "Winamp skins",
-                &skins_rows[0],
-                |ui| {
-                    if theme::pill_button(ui, &palette, "Switch to it", true).clicked() {
-                        app.actions.push(Action::ToggleWinampWindow);
+        section(ui, &palette, &skins, |ui| {
+            filtered_row(ui, &palette, &needle, &skins, &skins_rows[0], |ui| {
+                if theme::pill_button(ui, &palette, &gettext(locale, "Switch to it"), true)
+                    .clicked()
+                {
+                    app.actions.push(Action::ToggleWinampWindow);
+                }
+            });
+            filtered_row(ui, &palette, &needle, &skins, &skins_rows[1], |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    if theme::soft_button(
+                        ui,
+                        &palette,
+                        Some(Icon::Globe),
+                        &gettext(locale, "Skin Museum"),
+                        false,
+                    )
+                    .clicked()
+                    {
+                        app.actions
+                            .push(Action::OpenUrl("https://skins.webamp.org/".into()));
                     }
-                },
-            );
-            filtered_row(
-                ui,
-                &palette,
-                &needle,
-                "Winamp skins",
-                &skins_rows[1],
-                |ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 6.0;
-                        if theme::soft_button(ui, &palette, Some(Icon::Globe), "Skin Museum", false)
-                            .clicked()
-                        {
-                            app.actions
-                                .push(Action::OpenUrl("https://skins.webamp.org/".into()));
-                        }
-                        if theme::soft_button(
-                            ui,
-                            &palette,
-                            Some(Icon::ExternalLink),
-                            "Open folder",
-                            false,
-                        )
-                        .clicked()
-                        {
-                            app.actions.push(Action::OpenSkinsFolder);
-                        }
-                    });
-                },
-            );
+                    if theme::soft_button(
+                        ui,
+                        &palette,
+                        Some(Icon::ExternalLink),
+                        &open_folder,
+                        false,
+                    )
+                    .clicked()
+                    {
+                        app.actions.push(Action::OpenSkinsFolder);
+                    }
+                });
+            });
             let choices = app.winamp.choices.clone();
-            if skins_rows[1].matches(&needle, "Winamp skins")
-                || skins_rows[5].matches(&needle, "Winamp skins")
-            {
+            if skins_rows[1].matches(&needle, &skins) || skins_rows[5].matches(&needle, &skins) {
                 let mut options: Vec<(usize, &str)> = vec![(0, "Spotifast")];
                 options.extend(
                     choices
@@ -1055,70 +1156,46 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 }
                 ui.add_space(4.0);
             }
-            filtered_row(
-                ui,
-                &palette,
-                &needle,
-                "Winamp skins",
-                &skins_rows[2],
-                |ui| {
-                    let scale = crate::winamp::WinampState::scale(
-                        &app.settings,
-                        ui.ctx().pixels_per_point(),
-                    );
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 6.0;
-                        for candidate in 1..=crate::winamp::MAX_SCALE {
-                            let label = format!("{candidate}x");
-                            if theme::soft_button(ui, &palette, None, &label, candidate == scale)
-                                .clicked()
-                                && candidate != scale
-                            {
-                                app.actions.push(Action::SetSkinScale(candidate as u8));
-                            }
+            filtered_row(ui, &palette, &needle, &skins, &skins_rows[2], |ui| {
+                let scale =
+                    crate::winamp::WinampState::scale(&app.settings, ui.ctx().pixels_per_point());
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    for candidate in 1..=crate::winamp::MAX_SCALE {
+                        let label = format!("{candidate}x");
+                        if theme::soft_button(ui, &palette, None, &label, candidate == scale)
+                            .clicked()
+                            && candidate != scale
+                        {
+                            app.actions.push(Action::SetSkinScale(candidate as u8));
                         }
-                    });
-                },
-            );
-            filtered_row(
-                ui,
-                &palette,
-                &needle,
-                "Winamp skins",
-                &skins_rows[3],
-                |ui| {
-                    ui.add_enabled_ui(app.window_level_supported, |ui| {
-                        let mut on_top = app.settings.winamp_on_top && app.window_level_supported;
-                        if widgets::switch(ui, &palette, "Always on top", &mut on_top).changed() {
-                            app.actions.push(Action::ToggleWinampOnTop);
+                    }
+                });
+            });
+            filtered_row(ui, &palette, &needle, &skins, &skins_rows[3], |ui| {
+                ui.add_enabled_ui(app.window_level_supported, |ui| {
+                    let mut on_top = app.settings.winamp_on_top && app.window_level_supported;
+                    if widgets::switch(ui, &palette, &always_on_top, &mut on_top).changed() {
+                        app.actions.push(Action::ToggleWinampOnTop);
+                    }
+                });
+            });
+            if app.taskbar_setting_visible() {
+                filtered_row(ui, &palette, &needle, &skins, &skins_rows[4], |ui| {
+                    let mut visible = app.settings.winamp_show_taskbar;
+                    let response = widgets::switch(ui, &palette, &show_in_taskbar, &mut visible);
+                    if response.changed() {
+                        app.actions.push(Action::SetWinampTaskbar(visible));
+                    }
+                    #[cfg(any(test, feature = "demo"))]
+                    if app.demo_windows_controls {
+                        let id = egui::Id::new("demo-winamp-taskbar-focus");
+                        if !ui.data(|data| data.get_temp::<bool>(id)).unwrap_or(false) {
+                            response.scroll_to_me(Some(Align::Center));
+                            ui.data_mut(|data| data.insert_temp(id, true));
                         }
-                    });
-                },
-            );
-            if app.windows_controls_visible() {
-                filtered_row(
-                    ui,
-                    &palette,
-                    &needle,
-                    "Winamp skins",
-                    &skins_rows[4],
-                    |ui| {
-                        let mut visible = app.settings.winamp_show_taskbar;
-                        let response =
-                            widgets::switch(ui, &palette, "Show Winamp in taskbar", &mut visible);
-                        if response.changed() {
-                            app.actions.push(Action::SetWinampTaskbar(visible));
-                        }
-                        #[cfg(any(test, feature = "demo"))]
-                        if app.demo_windows_controls {
-                            let id = egui::Id::new("demo-winamp-taskbar-focus");
-                            if !ui.data(|data| data.get_temp::<bool>(id)).unwrap_or(false) {
-                                response.scroll_to_me(Some(Align::Center));
-                                ui.data_mut(|data| data.insert_temp(id, true));
-                            }
-                        }
-                    },
-                );
+                    }
+                });
             }
         });
     }
@@ -1127,46 +1204,86 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     app.winamp.presets.refresh(&presets_folder);
     let count = app.winamp.presets.count();
     let screen_hz = app.settings.milkdrop_screen_hz;
+    let milkdrop_window = gettext(locale, "MilkDrop window");
+    let folder = presets_folder.display().to_string();
     let milkdrop_rows = [
         RowText::new(
-            "MilkDrop window",
+            milkdrop_window.clone(),
             super::keys::platform_shortcut(
-                "A projectM visualiser for local playback. Open it here, from the top bar, with Ctrl+Shift+K, or from the mini player's V menu. Press ? or F1 for its shortcuts.",
-                "A projectM visualiser for local playback. Open it here, from the top bar, with Cmd+Shift+K, or from the mini player's V menu. Press ? or F1 for its shortcuts.",
-            ),
-        ),
-        RowText::new(
-            "Presets",
-            format!(
-                "{} in {}. Add .milk files here. Spotifast downloads presets when MilkDrop first opens with an empty folder.",
-                match count {
-                    0 => "None yet".to_string(),
-                    1 => "One preset".to_string(),
-                    n => format!("{n} presets"),
-                },
-                presets_folder.display(),
-            ),
-        ),
-        RowText::new(
-            "Time per preset",
-            "How long each preset plays before the next fades in.",
-        ),
-        RowText::new(
-            "Frame rate",
-            match screen_hz {
-                0 => "Lower rates use fewer resources. Uncapped draws as fast as possible."
-                    .to_string(),
-                hz => format!(
-                    "Your screen refreshes at {hz} Hz. Higher rates do not add visible frames. Uncapped draws as fast as possible."
+                &gettext(
+                    locale,
+                    "A projectM visualiser for local playback. Open it here, from the top bar, with Ctrl+Shift+K, or from the mini player's V menu. Press ? or F1 for its shortcuts.",
                 ),
+                &gettext(
+                    locale,
+                    "A projectM visualiser for local playback. Open it here, from the top bar, with Cmd+Shift+K, or from the mini player's V menu. Press ? or F1 for its shortcuts.",
+                ),
+            )
+            .to_owned(),
+        ),
+        RowText::new(
+            gettext(locale, "Presets"),
+            match count {
+                0 => gettext(
+                    locale,
+                    // Translators: {folder} is the path of the MilkDrop presets folder.
+                    "None yet in {folder}. Add .milk files here. Spotifast downloads presets when MilkDrop first opens with an empty folder.",
+                )
+                .replace("{folder}", &folder),
+                1 => gettext(
+                    locale,
+                    // Translators: {folder} is the path of the MilkDrop presets folder.
+                    "One preset in {folder}. Add .milk files here. Spotifast downloads presets when MilkDrop first opens with an empty folder.",
+                )
+                .replace("{folder}", &folder),
+                n => ngettext(
+                    locale,
+                    // Translators: {count} is the number of presets, {folder} the path of the MilkDrop presets folder.
+                    "{count} preset in {folder}. Add .milk files here. Spotifast downloads presets when MilkDrop first opens with an empty folder.",
+                    "{count} presets in {folder}. Add .milk files here. Spotifast downloads presets when MilkDrop first opens with an empty folder.",
+                    u32::try_from(n).unwrap_or(u32::MAX),
+                )
+                .replace("{count}", &n.to_string())
+                .replace("{folder}", &folder),
             },
         ),
         RowText::new(
-            "Resolution",
-            "Half and Quarter use fewer resources and scale the image back up.",
+            gettext(locale, "Time per preset"),
+            gettext(
+                locale,
+                "How long each preset plays before the next fades in.",
+            ),
         ),
         RowText::new(
-            "Get presets Open folder",
+            gettext(locale, "Frame rate"),
+            match screen_hz {
+                0 => gettext(
+                    locale,
+                    "Lower rates use fewer resources. Uncapped draws as fast as possible.",
+                ),
+                hz => gettext(
+                    locale,
+                    // Translators: {hz} is the screen's refresh rate in hertz.
+                    "Your screen refreshes at {hz} Hz. Higher rates do not add visible frames. Uncapped draws as fast as possible.",
+                )
+                .replace("{hz}", &hz.to_string())
+                .into(),
+            },
+        ),
+        RowText::new(
+            gettext(locale, "Resolution"),
+            gettext(
+                locale,
+                "Half and Quarter use fewer resources and scale the image back up.",
+            ),
+        ),
+        RowText::new(
+            format!(
+                "{} {}",
+                // Translators: search keywords for the MilkDrop preset download buttons.
+                gettext(locale, "Get presets"),
+                open_folder
+            ),
             crate::milkdrop::PACKS
                 .iter()
                 .map(|pack| pack.name)
@@ -1179,7 +1296,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         section(ui, &palette, "MilkDrop", |ui| {
             filtered_row(ui, &palette, &needle, "MilkDrop", &milkdrop_rows[0], |ui| {
                 let mut open = app.settings.milkdrop_open;
-                if widgets::switch(ui, &palette, "MilkDrop window", &mut open).changed() {
+                if widgets::switch(ui, &palette, &milkdrop_window, &mut open).changed() {
                     app.actions.push(Action::ToggleWinampMilkdrop);
                 }
             });
@@ -1201,8 +1318,11 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     ui.spacing_mut().item_spacing.x = 6.0;
                     for (index, pack) in crate::milkdrop::PACKS.iter().enumerate() {
                         let label = match downloading {
-                            Some(name) if name == pack.name => "Fetching...".to_string(),
-                            _ => format!("Get {}", pack.name),
+                            Some(name) if name == pack.name => {
+                                gettext(locale, "Fetching...").into_owned()
+                            }
+                            // Translators: {pack} is the name of a MilkDrop preset pack.
+                            _ => gettext(locale, "Get {pack}").replace("{pack}", pack.name),
                         };
                         if theme::soft_button(ui, &palette, Some(Icon::Globe), &label, false)
                             .on_hover_text(pack.note)
@@ -1216,7 +1336,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         ui,
                         &palette,
                         Some(Icon::ExternalLink),
-                        "Open folder",
+                        &open_folder,
                         false,
                     )
                     .clicked()
@@ -1244,7 +1364,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 let mut at = stops.iter().position(|rate| *rate == fps).unwrap_or(1);
                 let labels: Vec<String> = stops
                     .iter()
-                    .map(|rate| crate::milkdrop::fps_label(*rate, screen_hz))
+                    .map(|rate| crate::milkdrop::fps_label(locale, *rate, screen_hz))
                     .collect();
                 let shown = labels.clone();
                 let typed = stops.clone();
@@ -1288,8 +1408,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 let current = app.settings.milkdrop_scale.max(1);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
-                    for (scale, label) in [(1u32, "Full"), (2, "Half"), (4, "Quarter")] {
-                        if theme::soft_button(ui, &palette, None, label, scale == current).clicked()
+                    for (scale, label) in [
+                        (1u32, pgettext(locale, "resolution", "Full")),
+                        (2, pgettext(locale, "resolution", "Half")),
+                        (4, pgettext(locale, "resolution", "Quarter")),
+                    ] {
+                        if theme::soft_button(ui, &palette, None, &label, scale == current)
+                            .clicked()
                             && scale != current
                         {
                             app.actions.push(Action::SetMilkdropScale(scale));
@@ -1300,13 +1425,24 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         });
     }
 
+    let equalizer = gettext(locale, "Equalizer");
     let equalizer_rows = [
         RowText::new(
-            "Equalizer",
-            "A ten-band equalizer for playback on this computer. It does not affect other devices.",
+            equalizer.clone(),
+            gettext(
+                locale,
+                "A ten-band equalizer for playback on this computer. It does not affect other devices.",
+            ),
         ),
         RowText::new(
-            "Presets Preamp Bands dB",
+            format!(
+                "{} {} {} dB",
+                gettext(locale, "Presets"),
+                // Translators: a search keyword for the equalizer's preamplifier slider.
+                gettext(locale, "Preamp"),
+                // Translators: a search keyword for the equalizer's frequency band sliders.
+                gettext(locale, "Bands"),
+            ),
             crate::eq::PRESETS
                 .iter()
                 .map(|preset| preset.name)
@@ -1314,18 +1450,18 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 .join(" "),
         ),
     ];
-    if section_matches(&needle, "Equalizer", &equalizer_rows) {
+    if section_matches(&needle, &equalizer, &equalizer_rows) {
         any_visible = true;
-        section(ui, &palette, "Equalizer", |ui| {
+        section(ui, &palette, &equalizer, |ui| {
             filtered_row(
                 ui,
                 &palette,
                 &needle,
-                "Equalizer",
+                &equalizer,
                 &equalizer_rows[0],
                 |ui| {
                     let mut on = app.settings.eq_on;
-                    if widgets::switch(ui, &palette, "Equalizer", &mut on).changed() {
+                    if widgets::switch(ui, &palette, &equalizer, &mut on).changed() {
                         app.actions.push(Action::ToggleEq);
                     }
                 },
@@ -1339,7 +1475,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 .iter()
                 .position(|preset| preset.bands_db == app.settings.eq_bands_db)
                 .unwrap_or(usize::MAX);
-            let eq_extra_visible = equalizer_rows[1].matches(&needle, "Equalizer");
+            let eq_extra_visible = equalizer_rows[1].matches(&needle, &equalizer);
             if eq_extra_visible {
                 if let Some(picked) = widgets::chips(ui, &palette, &names, current) {
                     app.actions.push(Action::ApplyEqPreset(picked));
@@ -1351,7 +1487,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     ui.spacing_mut().item_spacing.x = 14.0;
                     let on = app.settings.eq_on;
                     let mut preamp = app.settings.eq_preamp_db;
-                    if eq_slider(ui, &palette, "Pre", &mut preamp, on) {
+                    if eq_slider(
+                        ui,
+                        &palette,
+                        // Translators: short label under the equalizer's preamplifier slider.
+                        &pgettext(locale, "equalizer", "Pre"),
+                        &mut preamp,
+                        on,
+                    ) {
                         app.actions.push(Action::SetEqPreamp(preamp));
                     }
                     for (band, hz) in crate::eq::BANDS.iter().enumerate() {
@@ -1365,62 +1508,95 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         });
     }
 
+    let storage = gettext(locale, "Storage");
     let storage_rows = [
         RowText::new(
-            "Artwork cache",
-            format!("Stored in {}", app.dirs.art_cache_dir().display()),
+            gettext(locale, "Artwork cache"),
+            // Translators: {folder} is the path of a cache folder.
+            gettext(locale, "Stored in {folder}")
+                .replace("{folder}", &app.dirs.art_cache_dir().display().to_string()),
         ),
         RowText::new(
-            "Audio cache",
-            format!("Stored in {}", app.dirs.audio_cache_dir().display()),
-        ),
-        RowText::new(
-            "Play history",
-            format!(
-                "Tracks played here are stored in {}. This file is never uploaded.",
-                app.dirs.history_file().display()
+            audio_cache.clone(),
+            // Translators: {folder} is the path of a cache folder.
+            gettext(locale, "Stored in {folder}").replace(
+                "{folder}",
+                &app.dirs.audio_cache_dir().display().to_string(),
             ),
         ),
         RowText::new(
-            "Sign-in",
-            "Sign-ins are saved in the system credential store when available.",
+            gettext(locale, "Play history"),
+            gettext(
+                locale,
+                // Translators: {file} is the path of the play history file.
+                "Tracks played here are stored in {file}. This file is never uploaded.",
+            )
+            .replace("{file}", &app.dirs.history_file().display().to_string()),
+        ),
+        RowText::new(
+            gettext(locale, "Sign-in"),
+            gettext(
+                locale,
+                "Sign-ins are saved in the system credential store when available.",
+            ),
         ),
     ];
-    if section_matches(&needle, "Storage", &storage_rows) {
+    if section_matches(&needle, &storage, &storage_rows) {
         any_visible = true;
-        section(ui, &palette, "Storage", |ui| {
-            filtered_row(ui, &palette, &needle, "Storage", &storage_rows[0], |ui| {
-                if theme::soft_button(ui, &palette, Some(Icon::Trash), "Clear artwork", false)
-                    .clicked()
+        section(ui, &palette, &storage, |ui| {
+            filtered_row(ui, &palette, &needle, &storage, &storage_rows[0], |ui| {
+                if theme::soft_button(
+                    ui,
+                    &palette,
+                    Some(Icon::Trash),
+                    &gettext(locale, "Clear artwork"),
+                    false,
+                )
+                .clicked()
                 {
                     app.actions.push(Action::ClearArtCache);
                 }
             });
-            filtered_row(ui, &palette, &needle, "Storage", &storage_rows[1], |_| {});
-            filtered_row(ui, &palette, &needle, "Storage", &storage_rows[2], |ui| {
-                if theme::soft_button(ui, &palette, Some(Icon::Trash), "Clear history", false)
-                    .clicked()
+            filtered_row(ui, &palette, &needle, &storage, &storage_rows[1], |_| {});
+            filtered_row(ui, &palette, &needle, &storage, &storage_rows[2], |ui| {
+                if theme::soft_button(
+                    ui,
+                    &palette,
+                    Some(Icon::Trash),
+                    &gettext(locale, "Clear history"),
+                    false,
+                )
+                .clicked()
                 {
                     app.actions.push(Action::ClearPlayHistory);
                 }
             });
-            filtered_row(ui, &palette, &needle, "Storage", &storage_rows[3], |_| {});
+            filtered_row(ui, &palette, &needle, &storage, &storage_rows[3], |_| {});
         });
     }
 
+    let about = gettext(locale, "About");
+    let built_with = gettext(
+        locale,
+        "Built with Rust, egui, and librespot. Not affiliated with Spotify.",
+    );
+    let check_for_updates = gettext(locale, "Check for updates");
+    let checking = gettext(locale, "Checking…");
+    let keyboard_shortcuts = gettext(locale, "Keyboard shortcuts");
+    let source_code = gettext(locale, "Source code");
     let about_rows = [
         RowText::new(
             format!("Spotifast {}", env!("CARGO_PKG_VERSION")),
-            "Built with Rust, egui, and librespot. Not affiliated with Spotify.",
+            built_with.clone(),
         ),
         RowText::new(
-            "Check for updates Checking…",
-            "Keyboard shortcuts Source code",
+            format!("{check_for_updates} {checking}"),
+            format!("{keyboard_shortcuts} {source_code}"),
         ),
     ];
-    if section_matches(&needle, "About", &about_rows) {
+    if section_matches(&needle, &about, &about_rows) {
         any_visible = true;
-        section(ui, &palette, "About", |ui| {
+        section(ui, &palette, &about, |ui| {
             ui.horizontal(|ui| {
                 let (logo, _) = ui.allocate_exact_size(Vec2::splat(40.0), egui::Sense::hover());
                 theme::logo(ui, logo.center(), 40.0, palette.accent, palette.on_accent);
@@ -1433,7 +1609,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     );
                     theme::text(
                         ui,
-                        "Built with Rust, egui, and librespot. Not affiliated with Spotify.",
+                        built_with.as_ref(),
                         theme::regular(13.0),
                         palette.secondary,
                     );
@@ -1443,9 +1619,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 let check_label = if app.update_checking {
-                    "Checking…"
+                    &checking
                 } else {
-                    "Check for updates"
+                    &check_for_updates
                 };
                 if theme::soft_button(ui, &palette, Some(Icon::Refresh), check_label, false)
                     .clicked()
@@ -1453,12 +1629,12 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 {
                     app.actions.push(Action::CheckForUpdates);
                 }
-                if theme::soft_button(ui, &palette, Some(Icon::Info), "Keyboard shortcuts", false)
+                if theme::soft_button(ui, &palette, Some(Icon::Info), &keyboard_shortcuts, false)
                     .clicked()
                 {
                     app.actions.push(Action::ShowDialog(Dialog::Shortcuts));
                 }
-                if theme::soft_button(ui, &palette, Some(Icon::ExternalLink), "Source code", false)
+                if theme::soft_button(ui, &palette, Some(Icon::ExternalLink), &source_code, false)
                     .clicked()
                 {
                     ui.ctx()
@@ -1473,8 +1649,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             ui,
             &palette,
             Icon::Search,
-            &format!("No settings for “{needle}”"),
-            "Try fewer words, or check the spelling.",
+            // Translators: {query} is the text typed into the settings search field.
+            &gettext(locale, "No settings for “{query}”").replace("{query}", &needle),
+            &gettext(locale, "Try fewer words, or check the spelling."),
         );
     }
 
@@ -1486,6 +1663,46 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 }
 
 /// A band's frequency the short way: 60, 170, 1K, 16K.
+/// The interface language: System first, then each language by its own name,
+/// so a reader can find theirs whatever language the app is showing.
+fn language_picker(app: &mut App, ui: &mut egui::Ui) {
+    let locale = app.locale;
+    let system = pgettext(locale, "language", "System");
+    let current = app.settings.language;
+    let selected = match current {
+        LanguageChoice::System => system.clone(),
+        LanguageChoice::Locale(chosen) => chosen.native_name().into(),
+    };
+    let response = egui::ComboBox::from_id_salt("interface_language")
+        .selected_text(selected.as_ref())
+        .width(200.0_f32.min(ui.available_width()))
+        // As many languages as a menu holds before it scrolls, not five.
+        .height(1000.0)
+        .show_ui(ui, |ui| {
+            let choices = std::iter::once((LanguageChoice::System, system.clone())).chain(
+                crate::i18n::LOCALES
+                    .iter()
+                    .map(|&each| (LanguageChoice::Locale(each), each.native_name().into())),
+            );
+            for (choice, label) in choices {
+                if ui
+                    .selectable_label(current == choice, label.as_ref())
+                    .clicked()
+                    && current != choice
+                {
+                    app.actions.push(Action::SetLanguage(choice));
+                }
+            }
+        });
+    let name = gettext(locale, "Language");
+    response.response.widget_info(|| {
+        let mut info =
+            egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, ui.is_enabled(), name.as_ref());
+        info.current_text_value = Some(selected.to_string());
+        info
+    });
+}
+
 fn hertz(hz: f32) -> String {
     if hz >= 1000.0 {
         format!("{}K", (hz / 1000.0).round() as u32)

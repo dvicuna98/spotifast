@@ -35,6 +35,10 @@ directories = "6"
 # A small translation trait for catalogs generated from PO files at build time.
 # No system libintl, global locale, or runtime catalog parsing is needed.
 tr = { version = "0.1.11", default-features = false }
+# The operating system's preferred languages, so the interface can follow
+# them: the preferred-language APIs on macOS and Windows and the POSIX
+# locale variables elsewhere, without platform code of our own.
+sys-locale = "0.3"
 # One protected-store API, with only each target's native provider below.
 # Durable Spotify grants must not be copied into ordinary state JSON.
 keyring-core = "1"
@@ -175,6 +179,10 @@ zbus = { version = "5", default-features = false, features = ["tokio"] }
 # suspended (xdg-shell v6), which decides whether vsync is safe. winit already
 # compiles this version.
 wayland-client = "0.31"
+# Keeps the X11 mini player out of the taskbar with _NET_WM_STATE_SKIP_TASKBAR
+# (src/window.rs), which winit only offers on Windows. winit already
+# compiles this version.
+x11rb = { version = "0.13", default-features = false }
 
 [build-dependencies]
 # Validate/filter unfinished PO entries, then compile catalog text and gettext

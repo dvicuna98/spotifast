@@ -6,6 +6,7 @@ use egui::{Align, CornerRadius, Galley, Layout, Sense, Vec2, pos2, vec2};
 
 use crate::api::models::pick_image;
 use crate::app::App;
+use crate::i18n::gettext;
 use crate::model::{Action, Page};
 use crate::theme::{self, Icon, Palette};
 
@@ -164,6 +165,7 @@ fn nav_button(
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
+    let locale = app.locale;
     let width = ui.available_width();
     let window_controls = super::window_controls_reservation(
         ui.ctx(),
@@ -197,7 +199,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     &palette,
                     Icon::PanelLeft,
                     true,
-                    super::keys::platform_shortcut("Show sidebar (Ctrl+B)", "Show sidebar (Cmd+B)"),
+                    super::keys::platform_shortcut(
+                        &gettext(locale, "Show sidebar (Ctrl+B)"),
+                        &gettext(locale, "Show sidebar (Cmd+B)"),
+                    ),
                 )
                 .clicked()
                 {
@@ -206,11 +211,19 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 ui.add_space(2.0);
             }
             if !app.settings.sidebar_visible
-                && nav_button(ui, &palette, Icon::House, true, "Home").clicked()
+                && nav_button(ui, &palette, Icon::House, true, &gettext(locale, "Home")).clicked()
             {
                 app.actions.push(Action::Open(Page::Home));
             }
-            if nav_button(ui, &palette, Icon::ChevronLeft, app.can_go_back(), "Back").clicked() {
+            if nav_button(
+                ui,
+                &palette,
+                Icon::ChevronLeft,
+                app.can_go_back(),
+                &gettext(locale, "Back"),
+            )
+            .clicked()
+            {
                 app.actions.push(Action::Back);
             }
             if nav_button(
@@ -218,7 +231,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 &palette,
                 Icon::ChevronRight,
                 app.can_go_forward(),
-                "Forward",
+                &gettext(locale, "Forward"),
             )
             .clicked()
             {
@@ -229,21 +242,29 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             // The badges sit at the right end but grow with their text, so
             // measure them here, before the search field takes its share.
             let device_galley = app.now_playing().filter(|now| !now.local).map(|now| {
-                let label = format!(
-                    "Playing on {}",
-                    now.device_name.unwrap_or_else(|| "another device".into())
-                );
+                let label = match now.device_name {
+                    Some(device) => {
+                        // Translators: {device} is the name of the device playing the music.
+                        gettext(locale, "Playing on {device}").replace("{device}", &device)
+                    }
+                    None => gettext(locale, "Playing on another device").into_owned(),
+                };
                 ui.painter()
                     .layout_no_wrap(label, theme::medium(12.5), palette.accent)
             });
             let update = app.update.clone();
             let update_galley = update.as_ref().map(|update| {
                 let label = match &app.update_download {
-                    crate::updates::DownloadState::Ready(_) => "Update ready".into(),
-                    crate::updates::DownloadState::Downloading { .. } => {
-                        "Downloading update…".into()
+                    crate::updates::DownloadState::Ready(_) => {
+                        gettext(locale, "Update ready").into_owned()
                     }
-                    _ => format!("Update to {}", update.version),
+                    crate::updates::DownloadState::Downloading { .. } => {
+                        gettext(locale, "Downloading update…").into_owned()
+                    }
+                    _ => {
+                        // Translators: {version} is a version number such as 1.2.0.
+                        gettext(locale, "Update to {version}").replace("{version}", &update.version)
+                    }
                 };
                 ui.painter()
                     .layout_no_wrap(label, theme::medium(12.5), palette.accent)
@@ -273,9 +294,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             let response = super::widgets::search_field(
                 ui,
                 &palette,
+                app.locale,
                 id,
                 &mut app.search.query,
-                "What do you want to play?",
+                &gettext(locale, "What do you want to play?"),
                 search_width,
             );
             if app.search.focus_requested {
@@ -377,21 +399,30 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                             });
                         }
                         super::widgets::menu_separator(ui, &palette);
-                        if super::widgets::menu_item(ui, &palette, Some(Icon::Settings), "Settings")
-                        {
+                        if super::widgets::menu_item(
+                            ui,
+                            &palette,
+                            Some(Icon::Settings),
+                            &gettext(locale, "Settings"),
+                        ) {
                             app.actions.push(Action::Open(Page::Settings));
                         }
                         if super::widgets::menu_item(
                             ui,
                             &palette,
                             Some(Icon::Info),
-                            "Keyboard shortcuts",
+                            &gettext(locale, "Keyboard shortcuts"),
                         ) {
                             app.actions
                                 .push(Action::ShowDialog(crate::model::Dialog::Shortcuts));
                         }
                         super::widgets::menu_separator(ui, &palette);
-                        if super::widgets::menu_item(ui, &palette, Some(Icon::LogOut), "Sign out") {
+                        if super::widgets::menu_item(
+                            ui,
+                            &palette,
+                            Some(Icon::LogOut),
+                            &gettext(locale, "Sign out"),
+                        ) {
                             app.actions.push(Action::SignOut);
                         }
                     });
@@ -402,7 +433,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     ICON_BUTTON_ICON,
                     palette.secondary,
                     palette.text,
-                    "Settings",
+                    &gettext(locale, "Settings"),
                 )
                 .clicked()
                 {
@@ -419,8 +450,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     },
                     palette.text,
                     super::keys::platform_shortcut(
-                        "MilkDrop visualiser (Ctrl+Shift+K)",
-                        "MilkDrop visualiser (Cmd+Shift+K)",
+                        &gettext(locale, "MilkDrop visualiser (Ctrl+Shift+K)"),
+                        &gettext(locale, "MilkDrop visualiser (Cmd+Shift+K)"),
                     ),
                 )
                 .clicked()
@@ -434,8 +465,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     palette.secondary,
                     palette.text,
                     super::keys::platform_shortcut(
-                        "Winamp mini player (Ctrl+M)",
-                        "Winamp mini player (Cmd+Shift+M)",
+                        &gettext(locale, "Winamp mini player (Ctrl+M)"),
+                        &gettext(locale, "Winamp mini player (Cmd+Shift+M)"),
                     ),
                 )
                 .clicked()
@@ -446,7 +477,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 // while, long enough that fast requests never flash it.
                 if busy {
                     theme::spinner(ui, SPINNER_SIZE, palette.secondary)
-                        .on_hover_text("Waiting for Spotify…");
+                        .on_hover_text(gettext(locale, "Waiting for Spotify…").as_ref());
                 }
                 // Where playback is.
                 if let Some(galley) = device_galley {
@@ -481,7 +512,11 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         UPDATE_BADGE_PADDING,
                         fit.labels,
                     )
-                    .on_hover_text(format!("Version {} is available.", update.version))
+                    .on_hover_text(
+                        // Translators: {version} is a version number such as 1.2.0.
+                        gettext(locale, "Version {version} is available.")
+                            .replace("{version}", &update.version),
+                    )
                     .clicked()
                 {
                     app.actions.push(Action::ShowUpdate);

@@ -245,17 +245,18 @@ impl Album {
             .map(|date| date.get(..4).unwrap_or(date))
     }
 
-    pub fn kind_label(&self) -> &'static str {
+    pub fn kind_label(&self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
+        use crate::i18n::gettext;
         match self
             .album_group
             .as_deref()
             .or(self.album_type.as_deref())
             .unwrap_or("album")
         {
-            "single" => "Single",
-            "compilation" => "Compilation",
-            "appears_on" => "Appears On",
-            _ => "Album",
+            "single" => gettext(locale, "Single"),
+            "compilation" => gettext(locale, "Compilation"),
+            "appears_on" => gettext(locale, "Appears On"),
+            _ => gettext(locale, "Album"),
         }
     }
 
@@ -837,7 +838,7 @@ mod tests {
         // `util::format_date` reads the same field with `get` and does not.
         assert_eq!(dated("\u{c791}\u{b144}").year(), Some("\u{c791}\u{b144}"));
         assert_eq!(
-            crate::util::format_date("\u{c791}\u{b144}"),
+            crate::util::format_date(crate::i18n::Locale::English, "\u{c791}\u{b144}"),
             "\u{c791}\u{b144}"
         );
         // No date at all is still no year.

@@ -151,8 +151,49 @@ fn page(items: Vec<PlaylistItem>, total: u32, offset: u32, limit: u32) -> Page<P
     }
 }
 
-/// The display name behind a user id, from the profile view Spotify's
-/// clients read; `None` when nothing answers.
+/// The songs of Spotify's radio `station`, in Spotify's order, with their
+/// details from one batched request. Spotify mixes a station afresh each
+/// time it is resolved, so the list returned here is the one to play.
+pub async fn station(session: &Session, station: &str) -> anyhow::Result<Vec<Track>> {
+    let context = session.spclient().get_context(station).await?;
+    let uris = station_songs(&context);
+    anyhow::ensure!(!uris.is_empty(), "Spotify has no songs for this radio");
+    let found = metadata(session, uris.iter())
+        .await
+        .map_err(|failure| match failure {
+            Failure::Definitive(error) => anyhow::anyhow!("{error}"),
+            Failure::Retry(error) => error,
+        })?;
+    Ok(uris
+        .iter()
+        .filter_map(|uri| uri.to_uri().ok())
+        .filter_map(|uri| match found.get(&uri) {
+            Some(PlayableItem::Track(track)) => Some(track.clone()),
+            _ => None,
+        })
+        .collect())
+}
+
+/// Each song of a resolved station once, named by URI or by raw id.
+fn station_songs(context: &librespot_protocol::context::Context) -> Vec<SpotifyUri> {
+    let mut seen = BTreeSet::new();
+    context
+        .pages
+        .iter()
+        .flat_map(|page| &page.tracks)
+        .filter_map(
+            |track| match track.uri.as_deref().filter(|uri| !uri.is_empty()) {
+                Some(uri) => SpotifyUri::from_uri(uri).ok(),
+                None => SpotifyId::from_raw(track.gid.as_deref()?)
+                    .ok()
+                    .map(|id| SpotifyUri::Track { id }),
+            },
+        )
+        .filter(|uri| matches!(uri, SpotifyUri::Track { .. }))
+        .filter(|uri| uri.to_uri().is_ok_and(|text| seen.insert(text)))
+        .collect()
+}
+
 /// Which of the given show URIs Spotify's metadata marks as audiobooks, in
 /// one batched request. librespot cannot play them. A show Spotify does not
 /// answer for is treated as a podcast, so it stays visible.
@@ -205,6 +246,8 @@ fn audiobooks_in(response: &BatchedExtensionResponse) -> Vec<String> {
     audiobooks
 }
 
+/// The display name behind a user id, from the profile view Spotify's
+/// clients read; `None` when nothing answers.
 pub async fn user_display_name(session: &Session, user_id: &str) -> Option<String> {
     let bytes = session
         .spclient()
@@ -1235,5 +1278,52 @@ mod tests {
     fn bytes_of_the_wrong_kind_read_as_nothing() {
         assert!(playable(ExtensionKind::TRACK_V4, b"not a track").is_none());
         assert!(playable(ExtensionKind::ALBUM_V4, &track_bytes()).is_none());
+    }
+
+    #[test]
+    fn a_station_lists_each_song_once_in_spotify_order() {
+        use librespot_protocol::context::Context;
+        use librespot_protocol::context_page::ContextPage;
+        use librespot_protocol::context_track::ContextTrack;
+        let by_uri = |uri: &str| ContextTrack {
+            uri: Some(uri.into()),
+            ..Default::default()
+        };
+        let context = Context {
+            pages: vec![
+                ContextPage {
+                    tracks: vec![
+                        by_uri("spotify:track:3JA9Jsuxr4xgHXEawAdCp4"),
+                        ContextTrack {
+                            gid: Some(vec![0; 16]),
+                            ..Default::default()
+                        },
+                        by_uri("spotify:episode:3JA9Jsuxr4xgHXEawAdCp4"),
+                        ContextTrack::default(),
+                    ],
+                    ..Default::default()
+                },
+                ContextPage {
+                    tracks: vec![
+                        by_uri("spotify:track:3JA9Jsuxr4xgHXEawAdCp4"),
+                        by_uri("spotify:track:4uLU6hMCjMI75M1A2tKUQC"),
+                    ],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let uris: Vec<String> = station_songs(&context)
+            .iter()
+            .map(|uri| uri.to_uri().unwrap())
+            .collect();
+        assert_eq!(
+            uris,
+            [
+                "spotify:track:3JA9Jsuxr4xgHXEawAdCp4",
+                "spotify:track:0000000000000000000000",
+                "spotify:track:4uLU6hMCjMI75M1A2tKUQC",
+            ]
+        );
     }
 }

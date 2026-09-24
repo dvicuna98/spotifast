@@ -53,12 +53,14 @@ struct Cli {
     /// Extra demo surfaces: a comma-separated list of `queue`, `playing-next`,
     /// `devices`, `shortcuts`, `create`, `light`, `focus`, `update`, `personal-app`,
     /// `windows-taskbar`, `german`, `lyrics`, `lyrics-fullscreen`, `collection-loading`,
-    /// `shuffle-selected`, or `shuffle-started`.
+    /// `shuffle-selected`, `shuffle-started`, `library-list`, `library-list-narrow`,
+    /// `library-list-wide`, `library-grid`, `library-grid-narrow`, or `library-grid-wide`.
     #[cfg(feature = "demo")]
     #[arg(long)]
     demo_show: Option<String>,
 
-    /// Language for the navigation translation pilot. Requires demo mode.
+    /// Interface language, in place of the saved setting and the system's.
+    /// Requires demo mode.
     #[cfg(feature = "demo")]
     #[arg(long, value_enum)]
     demo_language: Option<spotifast::i18n::Locale>,
@@ -80,6 +82,12 @@ struct Cli {
     #[cfg(feature = "demo")]
     #[arg(long, value_name = "WIDTHxHEIGHT", value_parser = parse_demo_size)]
     demo_size: Option<[f32; 2]>,
+
+    /// Hold a drag for `--demo-shot`: press the primary button at the first
+    /// point, move to the second and keep it held, as `X,Y:X,Y` in points.
+    #[cfg(feature = "demo")]
+    #[arg(long, value_name = "X,Y:X,Y", value_parser = parse_demo_drag)]
+    demo_drag: Option<[egui::Pos2; 2]>,
 }
 
 /// Remote control of the running instance, for Raycast scripts, launchers,
@@ -373,6 +381,21 @@ pub(crate) fn run() -> eframe::Result<()> {
     };
     let cli = Cli::from_arg_matches(&Cli::command().name(name).get_matches())
         .unwrap_or_else(|error| error.exit());
+    // Demo mode invents plays, settings, and a signed-in account. Without a
+    // folder of its own it would write them into the real profile, where
+    // they would pass for the user's history and stop the next real launch
+    // from moving an older profile across.
+    #[cfg(feature = "demo")]
+    let cli = if (cli.demo || cli.demo_shot.is_some()) && cli.demo_data.is_none() {
+        Cli {
+            demo_data: Some(
+                std::env::temp_dir().join(format!("spotifast-demo-{}", std::process::id())),
+            ),
+            ..cli
+        }
+    } else {
+        cli
+    };
     // A control launch is a client, not a second app: talk to the running
     // instance and exit before touching the log file it is writing to.
     if let Some(control) = cli.control {
@@ -470,13 +493,6 @@ pub(crate) fn run() -> eframe::Result<()> {
     }
     log_panics(dirs.panic_log());
     let mut settings = settings::Settings::load(&dirs.settings_file());
-    #[cfg(feature = "demo")]
-    if (cli.demo || cli.demo_shot.is_some()) && cli.demo_data.is_none() {
-        // The default demo must not inherit real custom palette files or cache.
-        settings.custom_theme = None;
-        settings.custom_theme_cache = None;
-        settings.system_theme_cache = None;
-    }
     if let Some(name) = cli.device_name {
         settings.device_name = name;
     }
@@ -549,6 +565,7 @@ pub(crate) fn run() -> eframe::Result<()> {
             app.actions.push(spotifast::model::Action::CheckForUpdates);
         }
         if let Some(locale) = cli.demo_language {
+            app.settings.language = spotifast::settings::LanguageChoice::Locale(locale);
             app.locale = locale;
         }
     }
@@ -558,6 +575,10 @@ pub(crate) fn run() -> eframe::Result<()> {
         due: std::time::Instant::now() + std::time::Duration::from_millis(cli.demo_shot_delay),
         asked: false,
     });
+    #[cfg(feature = "demo")]
+    let demo_drag = cli
+        .demo_drag
+        .map(|[from, to]| DemoDrag { from, to, frame: 0 });
     #[cfg(feature = "demo")]
     let demo_inner = cli.demo_size;
     #[cfg(feature = "demo")]
@@ -592,6 +613,8 @@ pub(crate) fn run() -> eframe::Result<()> {
         let persist_memory = options.persist_window;
         #[cfg(windows)]
         let thumbbar_enabled = desktop_surfaces && options.viewport.taskbar != Some(false);
+        #[cfg(target_os = "linux")]
+        let hide_from_taskbar = options.viewport.taskbar == Some(false);
         eframe::run_native(
             "Spotifast",
             options,
@@ -631,6 +654,17 @@ pub(crate) fn run() -> eframe::Result<()> {
                     if let Ok(display) = cc.display_handle() {
                         app.window_level_supported =
                             spotifast::window::supports_window_level(display.as_raw());
+                        app.taskbar_hiding_supported =
+                            spotifast::window::supports_hiding_from_taskbar(display.as_raw());
+                    }
+                }
+                // winit hides a taskbar button on Windows only; X11 is asked
+                // here, while the window is still unmapped.
+                #[cfg(target_os = "linux")]
+                if hide_from_taskbar {
+                    use raw_window_handle::HasWindowHandle;
+                    if let Ok(handle) = cc.window_handle() {
+                        spotifast::window::skip_x11_taskbar(handle.as_raw());
                     }
                 }
                 app.attach(&cc.egui_ctx);
@@ -657,6 +691,8 @@ pub(crate) fn run() -> eframe::Result<()> {
                     thumbbar,
                     #[cfg(feature = "demo")]
                     shot: creator_shot.clone(),
+                    #[cfg(feature = "demo")]
+                    drag: demo_drag,
                 }))
             }),
         )
@@ -803,6 +839,28 @@ fn parse_demo_size(spec: &str) -> Result<[f32; 2], String> {
     Ok([width, height])
 }
 
+#[cfg(feature = "demo")]
+fn parse_demo_drag(spec: &str) -> Result<[egui::Pos2; 2], String> {
+    let point = |point: &str| -> Result<egui::Pos2, String> {
+        let (x, y) = point
+            .split_once(',')
+            .ok_or_else(|| format!("expected X,Y, got {point}"))?;
+        let x: f32 = x
+            .trim()
+            .parse()
+            .map_err(|_| format!("invalid x in {point}"))?;
+        let y: f32 = y
+            .trim()
+            .parse()
+            .map_err(|_| format!("invalid y in {point}"))?;
+        Ok(egui::pos2(x, y))
+    };
+    let (from, to) = spec
+        .split_once(':')
+        .ok_or_else(|| format!("expected X,Y:X,Y, got {spec}"))?;
+    Ok([point(from)?, point(to)?])
+}
+
 // Windows can stop drawing a window created outside the current monitors.
 // App::attach restores the saved position only once the native scale is known
 // and window::can_restore has checked its title bar against a live work area.
@@ -859,7 +917,8 @@ fn native_options(
                 .with_min_inner_size(mini.size)
                 .with_max_inner_size(mini.size)
                 .with_window_level(level);
-            // egui applies this native attribute on Windows only.
+            // egui applies this native attribute on Windows only; the app
+            // creator asks X11 itself (window::skip_x11_taskbar).
             let viewport = viewport.with_taskbar(mini.taskbar);
             match mini_creation_position(mini.position, cfg!(windows)) {
                 Some([x, y]) => viewport.with_position([x, y]),
@@ -1079,6 +1138,36 @@ mod native_window_tests {
         }
     }
 
+    #[cfg(feature = "demo")]
+    #[test]
+    fn demo_drag_presses_at_the_first_point_and_holds_at_the_second() {
+        let [from, to] = parse_demo_drag("10,20:110, 220").unwrap();
+        assert_eq!(
+            (from, to),
+            (egui::pos2(10.0, 20.0), egui::pos2(110.0, 220.0))
+        );
+        assert!(parse_demo_drag("10,20").is_err());
+        assert!(parse_demo_drag("10:20").is_err());
+        let mut drag = DemoDrag { from, to, frame: 0 };
+        let frames: Vec<_> = (0..=DemoDrag::REST + DemoDrag::GLIDE + 5)
+            .map(|_| drag.events())
+            .collect();
+        let presses = frames
+            .iter()
+            .flatten()
+            .filter(|event| matches!(event, egui::Event::PointerButton { pressed: true, .. }))
+            .count();
+        assert_eq!(presses, 1, "one press, never a release");
+        assert!(
+            !frames
+                .iter()
+                .flatten()
+                .any(|event| matches!(event, egui::Event::PointerButton { pressed: false, .. }))
+        );
+        assert_eq!(frames[0][0], egui::Event::PointerMoved(from));
+        assert_eq!(frames.last().unwrap()[0], egui::Event::PointerMoved(to));
+    }
+
     #[test]
     fn demo_size_parses_width_by_height() {
         assert_eq!(parse_demo_size("760x800").unwrap(), [760.0, 800.0]);
@@ -1127,6 +1216,8 @@ mod native_window_tests {
                 thumbbar: spotifast::thumbbar::ThumbBar::new(),
                 #[cfg(feature = "demo")]
                 shot: None,
+                #[cfg(feature = "demo")]
+                drag: None,
             };
             assert!(!eframe::App::persist_egui_memory(&shell));
         }
@@ -1152,6 +1243,49 @@ struct Shell {
     /// A pending `--demo-shot` capture, if this is a screenshot run.
     #[cfg(feature = "demo")]
     shot: Option<Shot>,
+    /// A drag held for `--demo-drag`, if this run shows one.
+    #[cfg(feature = "demo")]
+    drag: Option<DemoDrag>,
+}
+
+/// A scripted pointer for `--demo-drag`: rest on `from`, press there, glide
+/// to `to` and hold, so the shot shows a drag in progress through the same
+/// code a real pointer runs.
+#[cfg(feature = "demo")]
+#[derive(Clone, Copy)]
+struct DemoDrag {
+    from: egui::Pos2,
+    to: egui::Pos2,
+    frame: u32,
+}
+
+#[cfg(feature = "demo")]
+impl DemoDrag {
+    /// Frames to rest before pressing, so the rows under `from` are laid out.
+    const REST: u32 = 20;
+    /// Frames the glide from `from` to `to` takes.
+    const GLIDE: u32 = 20;
+
+    fn events(&mut self) -> Vec<egui::Event> {
+        let frame = self.frame;
+        self.frame = self.frame.saturating_add(1);
+        let pos = if frame <= Self::REST {
+            self.from
+        } else {
+            let t = ((frame - Self::REST) as f32 / Self::GLIDE as f32).min(1.0);
+            self.from.lerp(self.to, t)
+        };
+        let mut events = vec![egui::Event::PointerMoved(pos)];
+        if frame == Self::REST {
+            events.push(egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
+        events
+    }
 }
 
 /// A screenshot the window still owes us.
@@ -1214,6 +1348,22 @@ impl Shell {
 impl eframe::App for Shell {
     fn persist_egui_memory(&self) -> bool {
         self.persist_memory
+    }
+
+    #[cfg(feature = "demo")]
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        if let Some(drag) = self.drag.as_mut() {
+            // The script owns the pointer: drop whatever the real one did.
+            raw_input.events.retain(|event| {
+                !matches!(
+                    event,
+                    egui::Event::PointerMoved(_)
+                        | egui::Event::PointerButton { .. }
+                        | egui::Event::PointerGone
+                )
+            });
+            raw_input.events.extend(drag.events());
+        }
     }
 
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {

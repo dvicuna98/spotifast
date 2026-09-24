@@ -1,5 +1,9 @@
 //! Small helpers shared across the application.
 
+use std::borrow::Cow;
+
+use crate::i18n::{Locale, gettext, ngettext, pgettext};
+
 /// `3:45` for track lengths, `1:02:03` past an hour.
 pub fn format_duration_ms(ms: u32) -> String {
     let total = ms / 1000;
@@ -14,28 +18,38 @@ pub fn format_duration_ms(ms: u32) -> String {
 }
 
 /// `2 hr 13 min` for playlist totals, `45 min 12 sec` under an hour.
-pub fn format_total_ms(ms: u64) -> String {
+pub fn format_total_ms(locale: Locale, ms: u64) -> String {
     let total = ms / 1000;
     let hours = total / 3600;
     let minutes = (total / 60) % 60;
     let seconds = total % 60;
     if hours > 0 {
-        format!("{hours} hr {minutes} min")
+        // Translators: A length of time, abbreviated. Keep {hours} and {minutes}.
+        gettext(locale, "{hours} hr {minutes} min")
+            .replace("{hours}", &hours.to_string())
+            .replace("{minutes}", &minutes.to_string())
     } else if minutes > 0 {
-        format!("{minutes} min {seconds} sec")
+        // Translators: A length of time, abbreviated. Keep {minutes} and {seconds}.
+        gettext(locale, "{minutes} min {seconds} sec")
+            .replace("{minutes}", &minutes.to_string())
+            .replace("{seconds}", &seconds.to_string())
     } else {
-        format!("{seconds} sec")
+        // Translators: A length of time, abbreviated. Keep {seconds}.
+        gettext(locale, "{seconds} sec").replace("{seconds}", &seconds.to_string())
     }
 }
 
 /// Episode lengths read as `1 hr 12 min` or `38 min`.
-pub fn format_episode_ms(ms: u32) -> String {
+pub fn format_episode_ms(locale: Locale, ms: u32) -> String {
     let minutes = ms / 60_000;
     let hours = minutes / 60;
     if hours > 0 {
-        format!("{hours} hr {} min", minutes % 60)
+        gettext(locale, "{hours} hr {minutes} min")
+            .replace("{hours}", &hours.to_string())
+            .replace("{minutes}", &(minutes % 60).to_string())
     } else {
-        format!("{} min", minutes.max(1))
+        // Translators: A length of time, abbreviated. Keep {minutes}.
+        gettext(locale, "{minutes} min").replace("{minutes}", &minutes.max(1).to_string())
     }
 }
 
@@ -52,7 +66,7 @@ pub fn format_count(count: u64) -> String {
 }
 
 /// `Jan 5, 2024` from an ISO-8601 timestamp or a bare date.
-pub fn format_date(iso: &str) -> String {
+pub fn format_date(locale: Locale, iso: &str) -> String {
     let date = iso.get(..10).unwrap_or(iso);
     let mut parts = date.split('-');
     let (Some(year), Some(month)) = (parts.next(), parts.next()) else {
@@ -60,24 +74,31 @@ pub fn format_date(iso: &str) -> String {
     };
     let day = parts.next();
     let month_name = match month {
-        "01" => "Jan",
-        "02" => "Feb",
-        "03" => "Mar",
-        "04" => "Apr",
-        "05" => "May",
-        "06" => "Jun",
-        "07" => "Jul",
-        "08" => "Aug",
-        "09" => "Sep",
-        "10" => "Oct",
-        "11" => "Nov",
-        "12" => "Dec",
+        "01" => pgettext(locale, "month", "Jan"),
+        "02" => pgettext(locale, "month", "Feb"),
+        "03" => pgettext(locale, "month", "Mar"),
+        "04" => pgettext(locale, "month", "Apr"),
+        "05" => pgettext(locale, "month", "May"),
+        "06" => pgettext(locale, "month", "Jun"),
+        "07" => pgettext(locale, "month", "Jul"),
+        "08" => pgettext(locale, "month", "Aug"),
+        "09" => pgettext(locale, "month", "Sep"),
+        "10" => pgettext(locale, "month", "Oct"),
+        "11" => pgettext(locale, "month", "Nov"),
+        "12" => pgettext(locale, "month", "Dec"),
         _ => return iso.to_string(),
     };
-    match day.and_then(|day| day.trim_start_matches('0').parse::<u8>().ok()) {
-        Some(day) => format!("{month_name} {day}, {year}"),
-        None => format!("{month_name} {year}"),
-    }
+    let dated = match day.and_then(|day| day.trim_start_matches('0').parse::<u8>().ok()) {
+        Some(day) => {
+            // Translators: A date. {month} is an abbreviated month name; reorder as your language writes dates.
+            gettext(locale, "{month} {day}, {year}").replace("{day}", &day.to_string())
+        }
+        // Translators: A month and year. {month} is an abbreviated month name.
+        None => gettext(locale, "{month} {year}").into_owned(),
+    };
+    dated
+        .replace("{month}", &month_name)
+        .replace("{year}", year)
 }
 
 /// `5 minutes ago` for recent ISO-8601 timestamps, otherwise the usual date.
@@ -85,28 +106,62 @@ pub fn format_date(iso: &str) -> String {
 /// Dates are shown relatively for their first 30 days, matching the playlist
 /// table's compact, time-aware presentation. `now` is an argument so callers
 /// can render against one instant and the boundary behaviour stays testable.
-pub fn format_relative_date(iso: &str, now: jiff::Timestamp) -> String {
+pub fn format_relative_date(locale: Locale, iso: &str, now: jiff::Timestamp) -> String {
     let Ok(added) = iso.parse::<jiff::Timestamp>() else {
-        return format_date(iso);
+        return format_date(locale, iso);
     };
     let seconds = added.duration_until(now).as_secs_f64().floor() as i64;
     if !(0..30 * 24 * 60 * 60).contains(&seconds) {
-        return format_date(iso);
+        return format_date(locale, iso);
     }
 
-    let (count, unit) = if seconds < 60 {
-        (seconds, "second")
+    let (count, text) = if seconds < 60 {
+        let count = seconds;
+        let text = ngettext(
+            locale,
+            // Translators: How long ago a song was added. Keep {count}.
+            "{count} second ago",
+            "{count} seconds ago",
+            count as u32,
+        );
+        (count, text)
     } else if seconds < 60 * 60 {
-        (seconds / 60, "minute")
+        let count = seconds / 60;
+        let text = ngettext(
+            locale,
+            // Translators: How long ago a song was added. Keep {count}.
+            "{count} minute ago",
+            "{count} minutes ago",
+            count as u32,
+        );
+        (count, text)
     } else if seconds < 24 * 60 * 60 {
-        (seconds / (60 * 60), "hour")
+        let count = seconds / (60 * 60);
+        let text = ngettext(
+            locale,
+            // Translators: How long ago a song was added. Keep {count}.
+            "{count} hour ago",
+            "{count} hours ago",
+            count as u32,
+        );
+        (count, text)
     } else if seconds < 7 * 24 * 60 * 60 {
-        (seconds / (24 * 60 * 60), "day")
+        let count = seconds / (24 * 60 * 60);
+        // Translators: How long ago a song was added. Keep {count}.
+        let text = ngettext(locale, "{count} day ago", "{count} days ago", count as u32);
+        (count, text)
     } else {
-        (seconds / (7 * 24 * 60 * 60), "week")
+        let count = seconds / (7 * 24 * 60 * 60);
+        let text = ngettext(
+            locale,
+            // Translators: How long ago a song was added. Keep {count}.
+            "{count} week ago",
+            "{count} weeks ago",
+            count as u32,
+        );
+        (count, text)
     };
-    let plural = if count == 1 { "" } else { "s" };
-    format!("{count} {unit}{plural} ago")
+    text.replace("{count}", &count.to_string())
 }
 
 /// Tears the id out of `spotify:track:abc` and friends.
@@ -118,6 +173,21 @@ pub fn uri_kind(uri: &str) -> Option<&str> {
     let mut parts = uri.split(':');
     parts.next()?;
     parts.next()
+}
+
+/// Spotify's radio station seeded by a song, playlist, album, or artist.
+pub fn station_uri(seed: &str) -> Option<String> {
+    let kind = uri_kind(seed)?;
+    let id = uri_id(seed)?;
+    (seed == format!("spotify:{kind}:{id}")
+        && matches!(kind, "track" | "playlist" | "album" | "artist"))
+    .then(|| format!("spotify:station:{kind}:{id}"))
+}
+
+/// The song, playlist, album, or artist a radio station is seeded by.
+pub fn station_seed(station: &str) -> Option<String> {
+    let seed = format!("spotify:{}", station.strip_prefix("spotify:station:")?);
+    station_uri(&seed).is_some().then_some(seed)
 }
 
 pub fn open_spotify_url(uri: &str) -> Option<String> {
@@ -187,11 +257,11 @@ pub fn app_icon_rgba(size: usize) -> Vec<u8> {
     rgba
 }
 
-pub fn greeting() -> &'static str {
+pub fn greeting(locale: Locale) -> Cow<'static, str> {
     match local_hour() {
-        5..=11 => "Good morning",
-        12..=17 => "Good afternoon",
-        _ => "Good evening",
+        5..=11 => gettext(locale, "Good morning"),
+        12..=17 => gettext(locale, "Good afternoon"),
+        _ => gettext(locale, "Good evening"),
     }
 }
 
@@ -261,49 +331,99 @@ mod tests {
     use super::*;
 
     #[test]
+    fn radio_stations_map_to_their_seeds_and_back() {
+        for kind in ["track", "playlist", "album", "artist"] {
+            let seed = format!("spotify:{kind}:4uLU6hMCjMI75M1A2tKUQC");
+            let station = station_uri(&seed).expect("a station");
+            assert_eq!(
+                station,
+                format!("spotify:station:{kind}:4uLU6hMCjMI75M1A2tKUQC")
+            );
+            assert_eq!(station_seed(&station).as_deref(), Some(seed.as_str()));
+        }
+        for seed in [
+            "spotify:show:abc",
+            "spotify:episode:abc",
+            "spotify:user:me:collection",
+            "spotify:track:",
+            "track:abc",
+        ] {
+            assert_eq!(station_uri(seed), None, "{seed}");
+        }
+        assert_eq!(station_seed("spotify:playlist:abc"), None);
+    }
+
+    #[test]
     fn durations() {
         assert_eq!(format_duration_ms(225_000), "3:45");
         assert_eq!(format_duration_ms(3_723_000), "1:02:03");
-        assert_eq!(format_total_ms(7_980_000), "2 hr 13 min");
-        assert_eq!(format_total_ms(2_712_000), "45 min 12 sec");
-        assert_eq!(format_episode_ms(4_320_000), "1 hr 12 min");
+        assert_eq!(format_total_ms(Locale::English, 7_980_000), "2 hr 13 min");
+        assert_eq!(format_total_ms(Locale::English, 2_712_000), "45 min 12 sec");
+        assert_eq!(format_episode_ms(Locale::English, 4_320_000), "1 hr 12 min");
     }
 
     #[test]
     fn counts_and_dates() {
         assert_eq!(format_count(1_234_567), "1,234,567");
         assert_eq!(format_count(12), "12");
-        assert_eq!(format_date("2024-01-05T10:00:00Z"), "Jan 5, 2024");
-        assert_eq!(format_date("2024-03"), "Mar 2024");
-        assert_eq!(format_date("2024"), "2024");
+        assert_eq!(
+            format_date(Locale::English, "2024-01-05T10:00:00Z"),
+            "Jan 5, 2024"
+        );
+        assert_eq!(format_date(Locale::English, "2024-03"), "Mar 2024");
+        assert_eq!(format_date(Locale::English, "2024"), "2024");
     }
 
     #[test]
     fn recent_dates_are_relative_for_the_first_month() {
         let now: jiff::Timestamp = "2026-08-31T12:00:00Z".parse().unwrap();
         assert_eq!(
-            format_relative_date("2026-08-31T11:59:30Z", now),
+            format_relative_date(Locale::English, "2026-08-31T11:59:30Z", now),
             "30 seconds ago"
         );
         assert_eq!(
-            format_relative_date("2026-08-31T11:59:00Z", now),
+            format_relative_date(Locale::English, "2026-08-31T11:59:00Z", now),
             "1 minute ago"
         );
         assert_eq!(
-            format_relative_date("2026-08-31T11:00:00Z", now),
+            format_relative_date(Locale::English, "2026-08-31T11:00:00Z", now),
             "1 hour ago"
         );
         assert_eq!(
-            format_relative_date("2026-08-30T12:00:00Z", now),
+            format_relative_date(Locale::English, "2026-08-30T12:00:00Z", now),
             "1 day ago"
         );
         assert_eq!(
-            format_relative_date("2026-08-17T12:00:00Z", now),
+            format_relative_date(Locale::English, "2026-08-17T12:00:00Z", now),
             "2 weeks ago"
         );
         assert_eq!(
-            format_relative_date("2026-08-01T12:00:00Z", now),
+            format_relative_date(Locale::English, "2026-08-01T12:00:00Z", now),
             "Aug 1, 2026"
+        );
+    }
+
+    #[test]
+    fn dates_and_lengths_follow_the_interface_language() {
+        let now: jiff::Timestamp = "2026-08-31T12:00:00Z".parse().unwrap();
+        assert_eq!(format_date(Locale::Spanish, "2024-01-05"), "5 ene 2024");
+        assert_eq!(format_date(Locale::Spanish, "2024-09"), "sept 2024");
+        assert_eq!(format_total_ms(Locale::Spanish, 7_980_000), "2 h 13 min");
+        assert_eq!(format_episode_ms(Locale::Spanish, 2_280_000), "38 min");
+        for (added, expected) in [
+            ("2026-08-31T11:59:59Z", "hace 1 segundo"),
+            ("2026-08-31T11:58:00Z", "hace 2 minutos"),
+            ("2026-08-30T12:00:00Z", "hace 1 día"),
+            ("2026-08-17T12:00:00Z", "hace 2 semanas"),
+        ] {
+            assert_eq!(format_relative_date(Locale::Spanish, added, now), expected);
+        }
+        // Each language orders the date its own way.
+        assert_eq!(format_date(Locale::Swedish, "2024-01-05"), "5 jan. 2024");
+        assert_eq!(format_date(Locale::English, "2024-01-05"), "Jan 5, 2024");
+        assert_eq!(
+            format_relative_date(Locale::Swedish, "2026-08-30T12:00:00Z", now),
+            "för 1 dag sedan"
         );
     }
 
@@ -311,10 +431,13 @@ mod tests {
     fn relative_dates_fall_back_for_future_and_invalid_timestamps() {
         let now: jiff::Timestamp = "2026-08-31T12:00:00Z".parse().unwrap();
         assert_eq!(
-            format_relative_date("2026-09-01T12:00:00Z", now),
+            format_relative_date(Locale::English, "2026-09-01T12:00:00Z", now),
             "Sep 1, 2026"
         );
-        assert_eq!(format_relative_date("not-a-date", now), "not-a-date");
+        assert_eq!(
+            format_relative_date(Locale::English, "not-a-date", now),
+            "not-a-date"
+        );
     }
 
     #[test]

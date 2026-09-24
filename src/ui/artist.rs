@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::api::models::{Artist, PlayableItem, pick_image};
 use crate::app::App;
+use crate::i18n::{gettext, ngettext, pgettext};
 use crate::model::{Action, DiscographyFilter, Loadable, Page, RowContext};
 use crate::theme::{self, Icon};
 use crate::util;
@@ -21,13 +22,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
     let preview =
         super::loading_preview(ui.ctx(), id, &page.artist, || app.known_artist(id).cloned());
     let palette = app.palette;
+    let locale = app.locale;
     match &page.artist {
         Loadable::Loaded(artist) => {
             artist_hero(app, ui, artist, preview.as_deref());
             artist_actions(app, ui, artist);
 
             // Popular.
-            theme::section_title(ui, &palette, "Popular");
+            theme::section_title(ui, &palette, &gettext(locale, "Popular"));
             ui.add_space(4.0);
             match &page.top_tracks {
                 Loadable::Loaded(tracks) if !tracks.is_empty() => {
@@ -68,10 +70,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
                             ui,
                             &palette,
                             None,
-                            if page.show_all_top {
-                                "Show less"
+                            &if page.show_all_top {
+                                gettext(locale, "Show less")
                             } else {
-                                "See more"
+                                gettext(locale, "See more")
                             },
                             false,
                         )
@@ -82,7 +84,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
                     }
                 }
                 Loadable::Loaded(_) => {
-                    theme::subtle(ui, &palette, "No popular songs to show.");
+                    theme::subtle(ui, &palette, &gettext(locale, "No popular songs to show."));
                 }
                 Loadable::Loading | Loadable::NotLoaded => {
                     widgets::loading_row(ui, &palette, app.locale)
@@ -95,11 +97,15 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
             ui.add_space(20.0);
 
             // Discography.
-            theme::section_title(ui, &palette, "Discography");
+            theme::section_title(ui, &palette, &gettext(locale, "Discography"));
             ui.add_space(6.0);
-            let options: Vec<(DiscographyFilter, &str)> = DiscographyFilter::ALL
+            let labels: Vec<_> = DiscographyFilter::ALL
                 .iter()
-                .map(|f| (*f, f.label()))
+                .map(|f| (*f, f.label(locale)))
+                .collect();
+            let options: Vec<(DiscographyFilter, &str)> = labels
+                .iter()
+                .map(|(filter, label)| (*filter, label.as_ref()))
                 .collect();
             if let Some(filter) = widgets::chips(ui, &palette, &options, page.filter) {
                 app.actions.push(Action::SetDiscographyFilter {
@@ -163,10 +169,18 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
                         let error = error.clone();
                         widgets::error_row(ui, app, &error, None);
                     } else if list.items.is_empty() {
-                        theme::subtle(ui, &palette, "Nothing in this category.");
+                        theme::subtle(ui, &palette, &gettext(locale, "Nothing in this category."));
                     } else if list.can_load_more() {
                         ui.add_space(8.0);
-                        if theme::soft_button(ui, &palette, None, "Load more", false).clicked() {
+                        if theme::soft_button(
+                            ui,
+                            &palette,
+                            None,
+                            &gettext(locale, "Load more"),
+                            false,
+                        )
+                        .clicked()
+                        {
                             app.actions
                                 .push(Action::LoadMoreArtistAlbums(id.to_string()));
                         }
@@ -180,14 +194,16 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
             if let Loadable::Loaded(related) = &page.related
                 && !related.is_empty()
             {
-                widgets::shelf(ui, &palette, "related", "Fans also like", |ui| {
+                let artist_label = gettext(locale, "Artist");
+                let title = gettext(locale, "Fans also like");
+                widgets::shelf(ui, &palette, "related", &title, |ui| {
                     for artist in related {
                         let card = widgets::card(
                             ui,
                             app,
                             pick_image(&artist.images, 640),
                             &artist.name,
-                            "Artist",
+                            &artist_label,
                             true,
                             true,
                         );
@@ -242,10 +258,18 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
 }
 
 fn artist_hero(app: &mut App, ui: &mut egui::Ui, artist: &Artist, preview: Option<&Artist>) {
+    let locale = app.locale;
     let mut byline = Vec::new();
     if let Some(followers) = &artist.followers {
         byline.push((
-            format!("{} followers", util::format_count(followers.total)),
+            ngettext(
+                locale,
+                // Translators: {count} is the number of people who follow an artist.
+                "{count} follower",
+                "{count} followers",
+                u32::try_from(followers.total).unwrap_or(u32::MAX),
+            )
+            .replace("{count}", &util::format_count(followers.total)),
             None,
         ));
     }
@@ -272,7 +296,7 @@ fn artist_hero(app: &mut App, ui: &mut egui::Ui, artist: &Artist, preview: Optio
         Hero {
             images,
             liked: false,
-            kind: "Artist",
+            kind: gettext(locale, "Artist"),
             title: &artist.name,
             description: None,
             byline,
@@ -283,11 +307,18 @@ fn artist_hero(app: &mut App, ui: &mut egui::Ui, artist: &Artist, preview: Optio
 
 fn artist_actions(app: &mut App, ui: &mut egui::Ui, artist: &Artist) {
     let palette = app.palette;
+    let locale = app.locale;
     let following = app.is_saved(&artist.uri).unwrap_or(false);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 18.0;
         if app.play_pending(&artist.uri) {
-            theme::circle_spinner(ui, 56.0, palette.accent, palette.on_accent, "Starting…");
+            theme::circle_spinner(
+                ui,
+                56.0,
+                palette.accent,
+                palette.on_accent,
+                &gettext(locale, "Starting…"),
+            );
         } else if theme::circle_button(
             ui,
             Icon::PlayFilled,
@@ -295,7 +326,7 @@ fn artist_actions(app: &mut App, ui: &mut egui::Ui, artist: &Artist) {
             palette.accent,
             palette.accent_hover,
             palette.on_accent,
-            "Play",
+            &gettext(locale, "Play"),
         )
         .clicked()
         {
@@ -308,7 +339,11 @@ fn artist_actions(app: &mut App, ui: &mut egui::Ui, artist: &Artist) {
         if theme::pill_button(
             ui,
             &palette,
-            if following { "Following" } else { "Follow" },
+            &if following {
+                pgettext(locale, "artist", "Following")
+            } else {
+                pgettext(locale, "artist", "Follow")
+            },
             false,
         )
         .clicked()
@@ -321,7 +356,7 @@ fn artist_actions(app: &mut App, ui: &mut egui::Ui, artist: &Artist) {
             26.0,
             palette.secondary,
             palette.text,
-            "More",
+            &gettext(locale, "More"),
         );
         egui::Popup::menu(&more)
             .frame(widgets::menu_frame(&palette))

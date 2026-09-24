@@ -219,6 +219,7 @@ main fields are:
 | `audio_backend` | platform | `pulseaudio` or `rodio` on Linux |
 | `audio_cache_mb` | `1024` | On-disk audio cache budget |
 | `theme` | `system` | Follow the system appearance by default; explicit `dark` and `light` choices remain available |
+| `language` | `system` | On `main` after 0.9.2: the interface language. `system` follows the operating system's preferred languages and falls back to English; a tag such as `es`, `de-DE`, `pt-BR` or `zh-Hant` selects that language. An unknown tag follows the system |
 | `custom_theme` | `null` | Selected JSON filename from the `themes` folder |
 | `custom_theme_cache` | absent | Last accepted custom palette; preserves appearance if its file is missing or invalid |
 | `system_theme_cache` | absent | Last accepted Omarchy palette for Follow system; retained across restarts |
@@ -228,9 +229,11 @@ main fields are:
 | `pinned_contexts` | `[]` | Local Library pin order; Liked Songs uses `spotifast:liked-songs`, a local key never sent to Spotify |
 | `liked_songs_pinned` | `true` | Keep Liked Songs in the pin block; older settings place it first until moved |
 | `sidebar_compact` | `false` | Names only in the library sidebar, no covers |
+| `sidebar_grid` | `false` | Library entries as responsive cover cards instead of rows |
 | `tracklist_compact` | `false` | One-line track rows without covers |
+| `middle_click_autoscroll` | `false` | Linux only: middle-click a list to autoscroll it. Windows always autoscrolls and macOS never does |
 | `winamp_window` | `false` | The window is the Winamp mini player |
-| `winamp_show_taskbar` | `true` | Windows only, since 0.8.0: show the Winamp window's taskbar button; the main window always keeps its button |
+| `winamp_show_taskbar` | `true` | Windows since 0.8.0, and Linux X11 sessions: show the Winamp window's taskbar button; the main window always keeps its button. Wayland and macOS ignore it |
 | `custom_titlebar` | `false` | Windows only, on `main` after 0.9.1: draw Spotifast's own title bar and window buttons instead of the standard Windows ones |
 | `skin` | none | File or folder name in the skins folder; blank uses the built-in skin |
 | `skin_scale` | by display | Screen pixels per skin pixel, 1 to 4 |
@@ -291,12 +294,18 @@ settings.
 and `--demo-show` adds surfaces on top of it: a comma separated list of
 `queue`, `playing-next`, `devices`, `shortcuts`, `premium`, `create`, `duplicate`, `light`,
 `focus`, `winamp`, `playlist`, `eq`, `eq-shade`, `compact`, `update`, `personal-app`,
-`collection-loading`, `shuffle-selected`, and `shuffle-started`. The last two
-capture the selected-mode and playback-started outcomes of a collection Shuffle
-click. `update` shows a sample update badge for checking its layout. `personal-app`
-shows the personal Spotify app introduction.
+`collection-loading`, `shuffle-selected`, `shuffle-started`, `library-list`,
+`library-list-narrow`, `library-list-wide`, `library-grid`, `library-grid-narrow`,
+and `library-grid-wide`. The Library variants show the list or cover grid with
+a normal, narrow, or wide sidebar and collapsed artwork for matching captures.
+`shuffle-selected` and `shuffle-started` capture the selected-mode and
+playback-started outcomes of a collection Shuffle click. `update` shows a sample
+update badge for checking its layout. `personal-app` shows the personal Spotify
+app introduction.
 `collection-loading` keeps known collection metadata and placeholder artwork
 visible while replacing the page content, with unfinished controls disabled.
+`--demo-language <TAG>` shows the interface in one of the bundled languages,
+such as `es` or `ja`, in place of the saved setting and the system's language.
 
 `--demo-shot <PATH>` writes the window to a PNG and exits, which is useful for
 making deterministic screenshots for these pages:
@@ -309,6 +318,9 @@ cargo run --release --features demo -- \
 The image uses the current window size. `--demo-size WIDTHxHEIGHT` sets that
 size in logical pixels for a shot (for example `760x800` or `1240x800`).
 `--demo-shot-delay <MS>` sets how long to wait for cover art before taking it.
+`--demo-drag X,Y:X,Y` shows a drag in progress: the pointer presses at the
+first point, in logical pixels, and is still held down at the second when the
+shot is taken.
 Since 0.8.0, demo windows ignore saved window geometry and do not
 read or save the normal window's framework state. Existing built-in appearance
 settings still apply. `--demo-data <DIRECTORY>` keeps demo caches and logs under

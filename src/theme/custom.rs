@@ -1,7 +1,9 @@
 //! Local palette files and their asynchronous catalog.
 
 use super::Palette;
+use crate::i18n::{Locale, gettext};
 use egui::Color32;
+use std::borrow::Cow;
 use std::{
     io::Read,
     path::{Component, Path, PathBuf},
@@ -20,6 +22,38 @@ pub fn label(filename: &str) -> &str {
         "Omarchy"
     } else {
         filename
+    }
+}
+
+/// Why the custom palettes could not all be listed, worded for Settings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Problem {
+    Unreadable,
+    TooManyEntries,
+    TooManyThemes,
+    LoaderFailed,
+}
+
+impl Problem {
+    fn text(self, locale: Locale) -> Cow<'static, str> {
+        match self {
+            Self::Unreadable => gettext(
+                locale,
+                "The themes folder could not be read. See the log for details.",
+            ),
+            Self::TooManyEntries => gettext(
+                locale,
+                "The themes folder has more than 512 entries. Keep fewer files there to list the custom palettes.",
+            ),
+            Self::TooManyThemes => gettext(
+                locale,
+                "Only 128 custom palettes can be listed. Keep fewer JSON files in the themes folder to see the rest.",
+            ),
+            Self::LoaderFailed => gettext(
+                locale,
+                "Custom themes could not be loaded. Run spotifast reload-themes to try again.",
+            ),
+        }
     }
 }
 
@@ -148,7 +182,7 @@ fn read_theme(directory: &Path, filename: &str) -> Result<CustomTheme, String> {
 #[derive(Default)]
 struct Loaded {
     themes: Vec<CustomTheme>,
-    problem: Option<String>,
+    problem: Option<Problem>,
     follows_omarchy: bool,
     system_theme: Option<CustomTheme>,
 }
@@ -167,8 +201,7 @@ fn discover(directory: &Path, selected: Option<&str>) -> Loaded {
         Ok(entries) => entries,
         Err(error) => {
             if error.kind() != std::io::ErrorKind::NotFound {
-                loaded.problem =
-                    Some("The themes folder could not be read. See the log for details.".into());
+                loaded.problem = Some(Problem::Unreadable);
                 log::warn!("unable to read themes at {}: {error}", directory.display());
             }
             return loaded;
@@ -177,7 +210,7 @@ fn discover(directory: &Path, selected: Option<&str>) -> Loaded {
     let mut names = Vec::new();
     for (index, entry) in entries.take(MAX_DIRECTORY_ENTRIES + 1).enumerate() {
         if index == MAX_DIRECTORY_ENTRIES {
-            loaded.problem = Some("The themes folder has more than 512 entries. Keep fewer files there to list the custom palettes.".into());
+            loaded.problem = Some(Problem::TooManyEntries);
             // Do not offer a different arbitrary subset depending on filesystem order.
             return loaded;
         }
@@ -202,7 +235,7 @@ fn discover(directory: &Path, selected: Option<&str>) -> Loaded {
     }
     names.sort();
     if names.len() + loaded.themes.len() > MAX_THEMES {
-        loaded.problem = Some("Only 128 custom palettes can be listed. Keep fewer JSON files in the themes folder to see the rest.".into());
+        loaded.problem = Some(Problem::TooManyThemes);
     }
     for filename in names.into_iter().take(MAX_THEMES - loaded.themes.len()) {
         match read_theme(directory, &filename) {
@@ -226,7 +259,7 @@ struct Scan {
 #[derive(Default)]
 pub struct Catalog {
     themes: Vec<CustomTheme>,
-    problem: Option<String>,
+    problem: Option<Problem>,
     receiver: Option<mpsc::Receiver<Loaded>>,
     pending: Option<Scan>,
     follows_omarchy: bool,
@@ -309,10 +342,7 @@ impl Catalog {
             Ok(_) => self.receiver = Some(receiver),
             Err(error) => {
                 log::warn!("unable to start the theme loader: {error}");
-                self.problem = Some(
-                    "Custom themes could not be loaded. Run spotifast reload-themes to try again."
-                        .into(),
-                );
+                self.problem = Some(Problem::LoaderFailed);
             }
         }
     }
@@ -351,14 +381,19 @@ impl Catalog {
         self.receiver.is_some()
     }
 
-    pub fn detail(&self, selected: Option<&str>) -> &str {
+    /// The status line under the Theme setting, empty when all is well.
+    pub fn detail_in(&self, locale: Locale, selected: Option<&str>) -> Cow<'static, str> {
         if self.loading() {
-            return "Loading local themes…";
+            return gettext(locale, "Loading local themes…");
         }
         if selected.is_some_and(|filename| self.find(filename).is_none()) {
-            return "The selected theme is unavailable. Keeping the last usable appearance. See the log for details.";
+            return gettext(
+                locale,
+                "The selected theme is unavailable. Keeping the last usable appearance. See the log for details.",
+            );
         }
-        self.problem.as_deref().unwrap_or("")
+        self.problem
+            .map_or(Cow::Borrowed(""), |problem| problem.text(locale))
     }
 
     pub fn poll(&mut self) -> bool {
@@ -384,10 +419,7 @@ impl Catalog {
                 self.system_theme = loaded.system_theme;
             }
             Err(mpsc::TryRecvError::Disconnected) => {
-                self.problem = Some(
-                    "Custom themes could not be loaded. Run spotifast reload-themes to try again."
-                        .into(),
-                );
+                self.problem = Some(Problem::LoaderFailed);
             }
             Err(mpsc::TryRecvError::Empty) => unreachable!("handled above"),
         }
@@ -627,7 +659,8 @@ mod custom_theme_tests {
                 .iter()
                 .any(|theme| theme.filename == "selected.json")
         );
-        assert!(loaded.problem.unwrap().contains("128"));
+        assert_eq!(loaded.problem, Some(Problem::TooManyThemes));
+        assert!(Problem::TooManyThemes.text(Locale::English).contains("128"));
         for index in 0..MAX_DIRECTORY_ENTRIES {
             std::fs::write(dir.join(format!("ignored-{index}.txt")), b"ignored").unwrap();
         }
@@ -640,7 +673,12 @@ mod custom_theme_tests {
                 .collect::<Vec<_>>(),
             ["selected.json"]
         );
-        assert!(loaded.problem.unwrap().contains("512"));
+        assert_eq!(loaded.problem, Some(Problem::TooManyEntries));
+        assert!(
+            Problem::TooManyEntries
+                .text(Locale::English)
+                .contains("512")
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

@@ -15,6 +15,7 @@ use egui::{
 };
 
 use crate::app::{App, NowPlaying};
+use crate::i18n::{Locale, gettext, pgettext};
 use crate::model::{Action, Page};
 use crate::player::RepeatMode;
 use crate::settings::VisMode;
@@ -419,8 +420,8 @@ fn full_window(
     if view
         .interact(layout::ABOUT, "about", Sense::click())
         .on_hover_text(super::keys::platform_shortcut(
-            "Back to the big window (Ctrl+M)",
-            "Back to the big window (Cmd+Shift+M)",
+            &gettext(app.locale, "Back to the big window (Ctrl+M)"),
+            &gettext(app.locale, "Back to the big window (Cmd+Shift+M)"),
         ))
         .clicked()
     {
@@ -463,10 +464,11 @@ fn shade_bar(
     menu(egui::Popup::context_menu(&title), view.skin, unit, |ui| {
         options_menu(app, ui, unit);
     });
-    let big_window = super::keys::platform_shortcut(
-        "Back to the big window (Ctrl+M)",
-        "Back to the big window (Cmd+Shift+M)",
-    );
+    let big_window = if cfg!(target_os = "macos") {
+        gettext(app.locale, "Back to the big window (Cmd+Shift+M)")
+    } else {
+        gettext(app.locale, "Back to the big window (Ctrl+M)")
+    };
     if view
         .button(
             layout::OPTIONS_BUTTON,
@@ -474,7 +476,7 @@ fn shade_bar(
             sprites::OPTIONS_BUTTON_PRESSED,
             "logo",
         )
-        .on_hover_text(big_window)
+        .on_hover_text(big_window.as_ref())
         .clicked()
     {
         app.actions.push(Action::ToggleWinampWindow);
@@ -497,7 +499,7 @@ fn shade_bar(
             sprites::UNSHADE_BUTTON_PRESSED,
             "unshade",
         )
-        .on_hover_text("Roll the window down")
+        .on_hover_text(gettext(app.locale, "Roll the window down").as_ref())
         .clicked()
     {
         app.actions.push(Action::ToggleWinampShade);
@@ -509,7 +511,7 @@ fn shade_bar(
             sprites::CLOSE_BUTTON_PRESSED,
             "close",
         )
-        .on_hover_text(big_window)
+        .on_hover_text(big_window.as_ref())
         .clicked()
     {
         app.actions.push(Action::ToggleWinampWindow);
@@ -629,10 +631,11 @@ fn title_bar(app: &mut App, view: &mut View, ctx: &egui::Context, focused: bool)
     // The logo and the close button lead back to the big window: the mini
     // player is a way of looking at the same app, not a second one to
     // close. Quitting is in the menu and through the platform shortcut.
-    let big_window = super::keys::platform_shortcut(
-        "Back to the big window (Ctrl+M)",
-        "Back to the big window (Cmd+Shift+M)",
-    );
+    let big_window = if cfg!(target_os = "macos") {
+        gettext(app.locale, "Back to the big window (Cmd+Shift+M)")
+    } else {
+        gettext(app.locale, "Back to the big window (Ctrl+M)")
+    };
     if view
         .button(
             layout::OPTIONS_BUTTON,
@@ -640,7 +643,7 @@ fn title_bar(app: &mut App, view: &mut View, ctx: &egui::Context, focused: bool)
             sprites::OPTIONS_BUTTON_PRESSED,
             "logo",
         )
-        .on_hover_text(big_window)
+        .on_hover_text(big_window.as_ref())
         .clicked()
     {
         app.actions.push(Action::ToggleWinampWindow);
@@ -663,7 +666,7 @@ fn title_bar(app: &mut App, view: &mut View, ctx: &egui::Context, focused: bool)
             sprites::SHADE_BUTTON_PRESSED,
             "shade",
         )
-        .on_hover_text("Roll the window up")
+        .on_hover_text(gettext(app.locale, "Roll the window up").as_ref())
         .clicked()
     {
         app.actions.push(Action::ToggleWinampShade);
@@ -675,7 +678,7 @@ fn title_bar(app: &mut App, view: &mut View, ctx: &egui::Context, focused: bool)
             sprites::CLOSE_BUTTON_PRESSED,
             "close",
         )
-        .on_hover_text(big_window)
+        .on_hover_text(big_window.as_ref())
         .clicked()
     {
         app.actions.push(Action::ToggleWinampWindow);
@@ -685,11 +688,12 @@ fn title_bar(app: &mut App, view: &mut View, ctx: &egui::Context, focused: bool)
 /// The menu behind a right-click on the title bar and the O of the
 /// clutter bar, sized to the skin so it fits inside the window.
 fn options_menu(app: &mut App, ui: &mut Ui, unit: f32) {
+    let locale = app.locale;
     let font = menu_font(unit);
     ui.set_min_width(font * 11.0);
     let scale = WinampState::scale(&app.settings, ui.ctx().pixels_per_point());
     ui.horizontal(|ui| {
-        ui.label("Size");
+        ui.label(gettext(locale, "Size").as_ref());
         for candidate in 1..=MAX_SCALE {
             if ui
                 .selectable_label(candidate == scale, format!("{candidate}x"))
@@ -702,16 +706,19 @@ fn options_menu(app: &mut App, ui: &mut Ui, unit: f32) {
     ui.add_enabled_ui(app.window_level_supported, |ui| {
         let mut on_top = app.settings.winamp_on_top && app.window_level_supported;
         if ui
-            .checkbox(&mut on_top, "Always on top")
-            .on_disabled_hover_text(crate::window::ON_TOP_UNAVAILABLE)
+            .checkbox(&mut on_top, gettext(locale, "Always on top").as_ref())
+            .on_disabled_hover_text(crate::window::on_top_unavailable(locale).as_ref())
             .clicked()
         {
             app.actions.push(Action::ToggleWinampOnTop);
         }
     });
-    if app.windows_controls_visible() {
+    if app.taskbar_setting_visible() {
         let mut visible = app.settings.winamp_show_taskbar;
-        if ui.checkbox(&mut visible, "Show in taskbar").changed() {
+        if ui
+            .checkbox(&mut visible, gettext(locale, "Show in taskbar").as_ref())
+            .changed()
+        {
             app.actions.push(Action::SetWinampTaskbar(visible));
         }
     }
@@ -723,14 +730,17 @@ fn options_menu(app: &mut App, ui: &mut Ui, unit: f32) {
     {
         app.actions.push(Action::ToggleWinampMilkdrop);
     }
-    if ui.button("Choose a skin").clicked() {
+    if ui
+        .button(gettext(locale, "Choose a skin").as_ref())
+        .clicked()
+    {
         app.actions.push(Action::Open(Page::Settings));
         app.actions.push(Action::ToggleWinampWindow);
     }
-    if ui.button("Big window").clicked() {
+    if ui.button(gettext(locale, "Big window").as_ref()).clicked() {
         app.actions.push(Action::ToggleWinampWindow);
     }
-    if ui.button("Quit").clicked() {
+    if ui.button(gettext(locale, "Quit").as_ref()).clicked() {
         app.actions.push(Action::Quit);
     }
 }
@@ -840,11 +850,14 @@ fn clutter_bar(app: &mut App, view: &mut View, now: Option<&NowPlaying>) {
             app.settings.winamp_on_top && app.window_level_supported,
             "clutter-a",
         )
-        .on_hover_text(if app.window_level_supported {
-            "Always on top"
-        } else {
-            crate::window::ON_TOP_UNAVAILABLE
-        })
+        .on_hover_text(
+            if app.window_level_supported {
+                gettext(app.locale, "Always on top")
+            } else {
+                crate::window::on_top_unavailable(app.locale)
+            }
+            .as_ref(),
+        )
         .clicked()
         && app.window_level_supported
     {
@@ -857,7 +870,7 @@ fn clutter_bar(app: &mut App, view: &mut View, now: Option<&NowPlaying>) {
             false,
             "clutter-i",
         )
-        .on_hover_text("Song info")
+        .on_hover_text(gettext(app.locale, "Song info").as_ref())
         .clicked()
         && let Some(now) = now
     {
@@ -878,7 +891,7 @@ fn clutter_bar(app: &mut App, view: &mut View, now: Option<&NowPlaying>) {
             scale >= 2,
             "clutter-d",
         )
-        .on_hover_text("Size: 2x, 3x, 4x")
+        .on_hover_text(gettext(app.locale, "Size: 2x, 3x, 4x").as_ref())
         .clicked()
     {
         let next = if scale >= MAX_SCALE {
@@ -897,15 +910,17 @@ fn clutter_bar(app: &mut App, view: &mut View, now: Option<&NowPlaying>) {
             app.settings.milkdrop_open,
             "clutter-v",
         )
-        .on_hover_text("Visualisation");
+        .on_hover_text(gettext(app.locale, "Visualisation").as_ref());
+    let locale = app.locale;
     menu(egui::Popup::menu(&vis), view.skin, unit, |ui| {
         for (mode, label) in [
-            (VisMode::Bars, "Spectrum analyser"),
-            (VisMode::Scope, "Oscilloscope"),
-            (VisMode::Off, "Nothing"),
+            (VisMode::Bars, gettext(locale, "Spectrum analyser")),
+            (VisMode::Scope, gettext(locale, "Oscilloscope")),
+            // Translators: The visualiser choice that shows no visualisation.
+            (VisMode::Off, pgettext(locale, "visualiser", "Nothing")),
         ] {
             if ui
-                .selectable_label(app.settings.vis == mode, label)
+                .selectable_label(app.settings.vis == mode, label.as_ref())
                 .clicked()
             {
                 app.actions.push(Action::SetVisualiser(mode));
@@ -1033,7 +1048,7 @@ fn status(app: &mut App, view: &mut View, now: Option<&NowPlaying>) {
     view.sprite(mono_lamp, layout::MONO);
     if view
         .interact(layout::MONO, "mono", Sense::click())
-        .on_hover_text("Play in mono")
+        .on_hover_text(gettext(app.locale, "Play in mono").as_ref())
         .clicked()
         && !mono
     {
@@ -1041,7 +1056,7 @@ fn status(app: &mut App, view: &mut View, now: Option<&NowPlaying>) {
     }
     if view
         .interact(layout::STEREO, "stereo", Sense::click())
-        .on_hover_text("Play in stereo")
+        .on_hover_text(gettext(app.locale, "Play in stereo").as_ref())
         .clicked()
         && mono
     {
@@ -1120,6 +1135,7 @@ fn time_display(app: &mut App, view: &mut View, now: Option<&NowPlaying>, time: 
 /// What the marquee says: a slider while it moves, as Winamp announced
 /// them, a seek while it is dragged, else the song.
 pub fn marquee_text(
+    locale: Locale,
     now: Option<&NowPlaying>,
     seek_preview: Option<f32>,
     volume_preview: Option<f32>,
@@ -1129,13 +1145,23 @@ pub fn marquee_text(
     if let Some(balance) = balance_preview {
         let percent = (balance.abs() * 100.0).round() as u32;
         return match balance {
-            b if b < 0.0 => format!("Balance: {percent}% left"),
-            b if b > 0.0 => format!("Balance: {percent}% right"),
-            _ => "Balance: center".to_string(),
+            b if b < 0.0 => {
+                // Translators: {percent} is a number from 0 to 100, followed by a percent sign.
+                gettext(locale, "Balance: {percent}% left")
+                    .replace("{percent}", &percent.to_string())
+            }
+            b if b > 0.0 => {
+                // Translators: {percent} is a number from 0 to 100, followed by a percent sign.
+                gettext(locale, "Balance: {percent}% right")
+                    .replace("{percent}", &percent.to_string())
+            }
+            _ => gettext(locale, "Balance: center").into_owned(),
         };
     }
     if let Some(volume) = volume_preview {
-        return format!("Volume: {}%", (volume * 100.0).round() as u32);
+        // Translators: {percent} is a number from 0 to 100, followed by a percent sign.
+        return gettext(locale, "Volume: {percent}%")
+            .replace("{percent}", &((volume * 100.0).round() as u32).to_string());
     }
     // The app's notices (a skin added, a playlist saved, an error) have
     // no toast to live in here; Winamp used the marquee for its own.
@@ -1149,12 +1175,14 @@ pub fn marquee_text(
         && now.duration_ms > 0
     {
         let target = (fraction * now.duration_ms as f32) as u32;
-        return format!(
-            "Seek to: {}/{} ({}%)",
-            util::format_duration_ms(target),
-            util::format_duration_ms(now.duration_ms),
-            (fraction * 100.0).round() as u32
-        );
+        // Translators: {position} and {duration} are times such as 2:12, {percent} a number from 0 to 100.
+        return gettext(locale, "Seek to: {position}/{duration} ({percent}%)")
+            .replace("{position}", &util::format_duration_ms(target))
+            .replace("{duration}", &util::format_duration_ms(now.duration_ms))
+            .replace(
+                "{percent}",
+                &((fraction * 100.0).round() as u32).to_string(),
+            );
     }
     let mut text = if now.subtitle.is_empty() {
         now.title.clone()
@@ -1170,6 +1198,7 @@ pub fn marquee_text(
 fn marquee(app: &mut App, view: &mut View, now: Option<&NowPlaying>) {
     let notice = app.toasts.last().map(|toast| toast.message.clone());
     let text = marquee_text(
+        app.locale,
         now,
         app.seek_preview,
         app.volume_preview,
@@ -1479,7 +1508,7 @@ fn transport(app: &mut App, view: &mut View, now: Option<&NowPlaying>) {
             sprites::EJECT_PRESSED,
             "eject",
         )
-        .on_hover_text("Open the big window")
+        .on_hover_text(gettext(app.locale, "Open the big window").as_ref())
         .clicked()
     {
         app.actions.push(Action::ToggleWinampWindow);
@@ -1559,13 +1588,16 @@ mod tests {
     fn the_marquee_names_the_song_the_way_winamp_did() {
         let playing = now("Karma Police", "Radiohead", 264_000);
         assert_eq!(
-            marquee_text(Some(&playing), None, None, None, None),
+            marquee_text(Locale::English, Some(&playing), None, None, None, None),
             "Radiohead - Karma Police (4:24)"
         );
-        assert_eq!(marquee_text(None, None, None, None, None), "Spotifast");
+        assert_eq!(
+            marquee_text(Locale::English, None, None, None, None, None),
+            "Spotifast"
+        );
         let untitled = now("Episode 12", "", 0);
         assert_eq!(
-            marquee_text(Some(&untitled), None, None, None, None),
+            marquee_text(Locale::English, Some(&untitled), None, None, None, None),
             "Episode 12"
         );
     }
@@ -1574,7 +1606,7 @@ mod tests {
     fn a_seek_in_progress_says_where_it_is_going() {
         let playing = now("Karma Police", "Radiohead", 264_000);
         assert_eq!(
-            marquee_text(Some(&playing), Some(0.5), None, None, None),
+            marquee_text(Locale::English, Some(&playing), Some(0.5), None, None, None),
             "Seek to: 2:12/4:24 (50%)"
         );
     }
@@ -1583,19 +1615,40 @@ mod tests {
     fn sliders_announce_themselves_while_they_move() {
         let playing = now("Karma Police", "Radiohead", 264_000);
         assert_eq!(
-            marquee_text(Some(&playing), None, Some(0.57), None, None),
+            marquee_text(
+                Locale::English,
+                Some(&playing),
+                None,
+                Some(0.57),
+                None,
+                None
+            ),
             "Volume: 57%"
         );
         assert_eq!(
-            marquee_text(Some(&playing), None, None, Some(-0.25), None),
+            marquee_text(
+                Locale::English,
+                Some(&playing),
+                None,
+                None,
+                Some(-0.25),
+                None
+            ),
             "Balance: 25% left"
         );
         assert_eq!(
-            marquee_text(None, None, None, Some(0.0), None),
+            marquee_text(Locale::English, None, None, None, Some(0.0), None),
             "Balance: center"
         );
         assert_eq!(
-            marquee_text(Some(&playing), None, None, None, Some("Added Zaxon skin")),
+            marquee_text(
+                Locale::English,
+                Some(&playing),
+                None,
+                None,
+                None,
+                Some("Added Zaxon skin")
+            ),
             "Added Zaxon skin"
         );
         assert_eq!(balance_of(0.5), 0.0);

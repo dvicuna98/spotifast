@@ -5714,6 +5714,7 @@ dependencies = [
  "spotsurf-connector",
  "spotsurf-core",
  "spotsurf-game",
+ "sys-locale",
  "thiserror 2.0.20",
  "tiny-skia",
  "tokio",
@@ -5726,6 +5727,7 @@ dependencies = [
  "windows-sys 0.60.2",
  "winit",
  "winresource",
+ "x11rb",
  "zbus",
  "zbus-secret-service-keyring-store",
 ]
@@ -6029,6 +6031,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "sys-locale"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8eab9a99a024a169fe8a903cf9d4a3b3601109bcc13bd9e3c6fff259138626c4"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

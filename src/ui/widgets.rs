@@ -7,7 +7,7 @@ use egui::{
 
 use crate::api::models::*;
 use crate::app::App;
-use crate::i18n::{Locale, gettext};
+use crate::i18n::{Locale, gettext, ngettext, pgettext};
 use crate::model::{Action, Dialog, DragEntry, DragTrack, Page, RowContext, RowPick};
 use crate::theme::{self, Icon, Palette};
 use crate::util;
@@ -495,6 +495,7 @@ pub fn picked_menu(
     editable_playlist: Option<&(String, Option<String>)>,
 ) {
     let palette = app.palette;
+    let locale = app.locale;
     ui.set_min_width(220.0);
     ui.set_max_width(300.0);
     let count = songs.len();
@@ -503,14 +504,28 @@ pub fn picked_menu(
     ui.horizontal(|ui| {
         ui.add_space(10.0);
         ui.label(
-            egui::RichText::new(format!("{count} songs"))
-                .font(theme::medium(12.0))
-                .color(palette.secondary),
+            egui::RichText::new(
+                ngettext(
+                    locale,
+                    // Translators: Keep {count} exactly as written. It becomes the number of selected songs.
+                    "{count} song",
+                    "{count} songs",
+                    count as u32,
+                )
+                .replace("{count}", &count.to_string()),
+            )
+            .font(theme::medium(12.0))
+            .color(palette.secondary),
         );
     });
     ui.add_space(4.0);
     menu_separator(ui, &palette);
-    if menu_item(ui, &palette, Some(Icon::ListEnd), "Add to queue") {
+    if menu_item(
+        ui,
+        &palette,
+        Some(Icon::ListEnd),
+        &gettext(locale, "Add to queue"),
+    ) {
         app.actions.push(Action::QueueMany {
             songs: songs
                 .iter()
@@ -521,11 +536,14 @@ pub fn picked_menu(
     // Set one explicit saved state for the full selection.
     let all_saved = uris.iter().all(|uri| app.is_saved(uri).unwrap_or(false));
     let (icon, text) = if all_saved {
-        (Icon::HeartFilled, "Remove from Liked Songs")
+        (
+            Icon::HeartFilled,
+            gettext(locale, "Remove from Liked Songs"),
+        )
     } else {
-        (Icon::Heart, "Save to Liked Songs")
+        (Icon::Heart, gettext(locale, "Save to Liked Songs"))
     };
-    if menu_item(ui, &palette, Some(icon), text) {
+    if menu_item(ui, &palette, Some(icon), &text) {
         app.actions.push(Action::SetSavedMany {
             uris: uris.clone(),
             saved: !all_saved,
@@ -535,7 +553,12 @@ pub fn picked_menu(
     // both the unsorted context and a sorted or filtered view. The caller
     // only passes a playlist when every picked row shares it.
     if let Some((playlist_id, _)) = editable_playlist
-        && menu_item(ui, &palette, Some(Icon::Minus), "Remove from this playlist")
+        && menu_item(
+            ui,
+            &palette,
+            Some(Icon::Minus),
+            &gettext(locale, "Remove from this playlist"),
+        )
     {
         app.actions.push(Action::RemoveFromPlaylist {
             playlist_id: playlist_id.clone(),
@@ -552,7 +575,7 @@ fn add_to_playlist_menu(ui: &mut Ui, app: &mut App, items: &[PlayableItem]) {
         ui,
         &palette,
         Some(Icon::ListPlus),
-        "Add to playlist",
+        &gettext(app.locale, "Add to playlist"),
         |ui| {
             let frame = ui.ctx().cumulative_frame_nr();
             let previous = ui
@@ -581,19 +604,26 @@ pub(crate) fn playlist_picker(
     query: &mut String,
 ) -> egui::Response {
     let palette = app.palette;
+    let locale = app.locale;
     ui.set_min_width(220.0);
     ui.set_max_width(300.0);
     let width = ui.available_width();
     let field = search_field(
         ui,
         &palette,
+        locale,
         ui.make_persistent_id("playlist-filter"),
         query,
-        "Filter playlists",
+        &gettext(locale, "Filter playlists"),
         width,
     );
     ui.add_space(4.0);
-    if menu_item(ui, &palette, Some(Icon::Plus), "New playlist") {
+    if menu_item(
+        ui,
+        &palette,
+        Some(Icon::Plus),
+        &gettext(locale, "New playlist"),
+    ) {
         app.actions.push(Action::ShowDialog(Dialog::CreatePlaylist {
             name: String::new(),
             public: false,
@@ -611,10 +641,10 @@ pub(crate) fn playlist_picker(
         theme::subtle(
             ui,
             &palette,
-            if needle.is_empty() {
-                "No editable playlists"
+            &if needle.is_empty() {
+                gettext(locale, "No editable playlists")
             } else {
-                "No matching playlists"
+                gettext(locale, "No matching playlists")
             },
         );
     }
@@ -649,11 +679,17 @@ pub fn item_menu(
     index: Option<usize>,
 ) {
     let palette = app.palette;
+    let locale = app.locale;
     ui.set_min_width(220.0);
     ui.set_max_width(300.0);
     let uri = item.uri().to_string();
     let label = item.name().to_string();
-    if menu_item(ui, &palette, Some(Icon::ListEnd), "Add to queue") {
+    if menu_item(
+        ui,
+        &palette,
+        Some(Icon::ListEnd),
+        &gettext(locale, "Add to queue"),
+    ) {
         app.actions.push(Action::AddToQueue {
             uri: uri.clone(),
             label: label.clone(),
@@ -662,15 +698,23 @@ pub fn item_menu(
     if item.is_track() {
         let saved = app.is_saved(&uri).unwrap_or(false);
         let (icon, text) = if saved {
-            (Icon::HeartFilled, "Remove from Liked Songs")
+            (
+                Icon::HeartFilled,
+                gettext(locale, "Remove from Liked Songs"),
+            )
         } else {
-            (Icon::Heart, "Save to Liked Songs")
+            (Icon::Heart, gettext(locale, "Save to Liked Songs"))
         };
-        if menu_item(ui, &palette, Some(icon), text) {
+        if menu_item(ui, &palette, Some(icon), &text) {
             app.actions.push(Action::ToggleSaved(uri.clone()));
         }
         add_to_playlist_menu(ui, app, std::slice::from_ref(item));
-    } else if menu_item(ui, &palette, Some(Icon::Bookmark), "Save episode") {
+    } else if menu_item(
+        ui,
+        &palette,
+        Some(Icon::Bookmark),
+        &gettext(locale, "Save episode"),
+    ) {
         app.actions.push(Action::ToggleSaved(uri.clone()));
     }
     // Removal is URI-based, so it stays available on a sorted or
@@ -689,14 +733,26 @@ pub fn item_menu(
     };
     if let Some((playlist_id, can_move)) = editable {
         if can_move && let Some(index) = index {
-            if index > 0 && menu_item(ui, &palette, Some(Icon::ChevronUp), "Move up") {
+            if index > 0
+                && menu_item(
+                    ui,
+                    &palette,
+                    Some(Icon::ChevronUp),
+                    &gettext(locale, "Move up"),
+                )
+            {
                 app.actions.push(Action::MoveInPlaylist {
                     playlist_id: playlist_id.clone(),
                     from: index as u32,
                     to: index as u32 - 1,
                 });
             }
-            if menu_item(ui, &palette, Some(Icon::ChevronDown), "Move down") {
+            if menu_item(
+                ui,
+                &palette,
+                Some(Icon::ChevronDown),
+                &gettext(locale, "Move down"),
+            ) {
                 app.actions.push(Action::MoveInPlaylist {
                     playlist_id: playlist_id.clone(),
                     from: index as u32,
@@ -704,7 +760,12 @@ pub fn item_menu(
                 });
             }
         }
-        if menu_item(ui, &palette, Some(Icon::Minus), "Remove from this playlist") {
+        if menu_item(
+            ui,
+            &palette,
+            Some(Icon::Minus),
+            &gettext(locale, "Remove from this playlist"),
+        ) {
             app.actions.push(Action::RemoveFromPlaylist {
                 playlist_id: playlist_id.clone(),
                 uris: vec![uri.clone()],
@@ -714,8 +775,13 @@ pub fn item_menu(
     menu_separator(ui, &palette);
     match item {
         PlayableItem::Track(track) => {
-            if menu_item(ui, &palette, Some(Icon::Radio), "Go to song radio") {
-                app.actions.push(Action::PlayTrackRadio(uri.clone()));
+            if menu_item(
+                ui,
+                &palette,
+                Some(Icon::Radio),
+                &gettext(locale, "Go to song radio"),
+            ) {
+                app.actions.push(Action::Open(Page::Radio(uri.clone())));
             }
             let artists: Vec<&ArtistRef> = track
                 .artists
@@ -723,13 +789,19 @@ pub fn item_menu(
                 .filter(|artist| artist.id.is_some())
                 .collect();
             if artists.len() == 1 {
-                if menu_item(ui, &palette, Some(Icon::User), "Go to artist") {
+                if menu_item(
+                    ui,
+                    &palette,
+                    Some(Icon::User),
+                    &gettext(locale, "Go to artist"),
+                ) {
                     app.actions.push(Action::Open(Page::Artist(
                         artists[0].id.clone().unwrap_or_default(),
                     )));
                 }
             } else if artists.len() > 1 {
-                menu_submenu(ui, &palette, Some(Icon::User), "Go to artist", |ui| {
+                let label = gettext(locale, "Go to artist");
+                menu_submenu(ui, &palette, Some(Icon::User), &label, |ui| {
                     ui.set_min_width(200.0);
                     for artist in &artists {
                         if menu_item(ui, &palette, Some(Icon::User), &artist.name) {
@@ -742,7 +814,12 @@ pub fn item_menu(
             }
             if let Some(album) = &track.album
                 && !album.id.is_empty()
-                && menu_item(ui, &palette, Some(Icon::Disc), "Go to album")
+                && menu_item(
+                    ui,
+                    &palette,
+                    Some(Icon::Disc),
+                    &gettext(locale, "Go to album"),
+                )
             {
                 app.actions
                     .push(Action::Open(Page::Album(album.id.clone())));
@@ -750,17 +827,32 @@ pub fn item_menu(
         }
         PlayableItem::Episode(episode) => {
             if let Some(show) = &episode.show
-                && menu_item(ui, &palette, Some(Icon::Mic), "Go to podcast")
+                && menu_item(
+                    ui,
+                    &palette,
+                    Some(Icon::Mic),
+                    &gettext(locale, "Go to podcast"),
+                )
             {
                 app.actions.push(Action::Open(Page::Show(show.id.clone())));
             }
         }
     }
     menu_separator(ui, &palette);
-    if menu_item(ui, &palette, Some(Icon::Copy), "Copy link") {
+    if menu_item(
+        ui,
+        &palette,
+        Some(Icon::Copy),
+        &gettext(locale, "Copy link"),
+    ) {
         app.actions.push(Action::CopyLink(uri.clone()));
     }
-    if menu_item(ui, &palette, Some(Icon::ExternalLink), "Open in Spotify") {
+    if menu_item(
+        ui,
+        &palette,
+        Some(Icon::ExternalLink),
+        &gettext(locale, "Open in Spotify"),
+    ) {
         app.actions.push(Action::OpenInSpotify(uri));
     }
 }
@@ -774,20 +866,35 @@ pub fn context_menu_items(
     owned_playlist: Option<&Playlist>,
 ) {
     let palette = app.palette;
+    let locale = app.locale;
     ui.set_min_width(200.0);
     ui.set_max_width(300.0);
     let kind = util::uri_kind(uri).unwrap_or("");
-    if menu_item(ui, &palette, Some(Icon::Play), "Play") {
+    if menu_item(ui, &palette, Some(Icon::Play), &gettext(locale, "Play")) {
         app.actions.push(Action::PlayContext {
             uri: uri.to_string(),
             offset_uri: None,
             offset_index: None,
         });
     }
-    if kind != "artist" && menu_item(ui, &palette, Some(Icon::Shuffle), "Shuffle play") {
+    if kind != "artist"
+        && menu_item(
+            ui,
+            &palette,
+            Some(Icon::Shuffle),
+            &gettext(locale, "Shuffle play"),
+        )
+    {
         app.actions.push(Action::ShufflePlay(uri.to_string()));
     }
-    if kind == "album" && menu_item(ui, &palette, Some(Icon::ListEnd), "Add to queue") {
+    if kind == "album"
+        && menu_item(
+            ui,
+            &palette,
+            Some(Icon::ListEnd),
+            &gettext(locale, "Add to queue"),
+        )
+    {
         app.actions.push(Action::AddToQueue {
             uri: uri.to_string(),
             label: name.to_string(),
@@ -795,16 +902,21 @@ pub fn context_menu_items(
     }
     let saved = app.is_saved(uri).unwrap_or(false);
     let (icon, text) = match (kind, saved) {
-        ("artist", true) => (Icon::CircleX, "Unfollow"),
-        ("artist", false) => (Icon::CirclePlus, "Follow"),
-        (_, true) => (Icon::CircleX, "Remove from Your Library"),
-        (_, false) => (Icon::CirclePlus, "Add to Your Library"),
+        ("artist", true) => (Icon::CircleX, pgettext(locale, "artist", "Unfollow")),
+        ("artist", false) => (Icon::CirclePlus, pgettext(locale, "artist", "Follow")),
+        (_, true) => (Icon::CircleX, gettext(locale, "Remove from Your Library")),
+        (_, false) => (Icon::CirclePlus, gettext(locale, "Add to Your Library")),
     };
-    if owned_playlist.is_none() && menu_item(ui, &palette, Some(icon), text) {
+    if owned_playlist.is_none() && menu_item(ui, &palette, Some(icon), &text) {
         app.actions.push(Action::ToggleSaved(uri.to_string()));
     }
     if let Some(playlist) = owned_playlist {
-        if menu_item(ui, &palette, Some(Icon::Pencil), "Edit details") {
+        if menu_item(
+            ui,
+            &palette,
+            Some(Icon::Pencil),
+            &gettext(locale, "Edit details"),
+        ) {
             app.actions.push(Action::ShowDialog(Dialog::EditPlaylist {
                 cover: Default::default(),
                 id: playlist.id.clone(),
@@ -817,7 +929,7 @@ pub fn context_menu_items(
                 public: playlist.public,
             }));
         }
-        if menu_item(ui, &palette, Some(Icon::Trash), "Delete") {
+        if menu_item(ui, &palette, Some(Icon::Trash), &gettext(locale, "Delete")) {
             app.actions
                 .push(Action::ShowDialog(Dialog::ConfirmDeletePlaylist {
                     id: playlist.id.clone(),
@@ -827,10 +939,32 @@ pub fn context_menu_items(
         }
     }
     menu_separator(ui, &palette);
-    if menu_item(ui, &palette, Some(Icon::Copy), "Copy link") {
+    let radio = match kind {
+        "playlist" => Some(gettext(locale, "Go to playlist radio")),
+        "album" => Some(gettext(locale, "Go to album radio")),
+        "artist" => Some(gettext(locale, "Go to artist radio")),
+        _ => None,
+    };
+    if let Some(label) = radio
+        && util::station_uri(uri).is_some()
+        && menu_item(ui, &palette, Some(Icon::Radio), &label)
+    {
+        app.actions.push(Action::Open(Page::Radio(uri.to_string())));
+    }
+    if menu_item(
+        ui,
+        &palette,
+        Some(Icon::Copy),
+        &gettext(locale, "Copy link"),
+    ) {
         app.actions.push(Action::CopyLink(uri.to_string()));
     }
-    if menu_item(ui, &palette, Some(Icon::ExternalLink), "Open in Spotify") {
+    if menu_item(
+        ui,
+        &palette,
+        Some(Icon::ExternalLink),
+        &gettext(locale, "Open in Spotify"),
+    ) {
         app.actions.push(Action::OpenInSpotify(uri.to_string()));
     }
 }
@@ -1005,7 +1139,13 @@ fn track_row_contents(
             egui::WidgetType::Button,
             ui.is_enabled() && !unavailable,
             row.picked,
-            format!("Play {}, {}", row.item.name(), row.item.subtitle()),
+            gettext(
+                app.locale,
+                // Translators: {title} is a song or episode name, {subtitle} its artists or podcast.
+                "Play {title}, {subtitle}",
+            )
+            .replace("{title}", row.item.name())
+            .replace("{subtitle}", &row.item.subtitle()),
         )
     });
     if response.gained_focus() {
@@ -1017,13 +1157,19 @@ fn track_row_contents(
     // Start a sidebar drag only after egui's drag threshold.
     if row.item.is_track() && response.drag_started_by(egui::PointerButton::Primary) {
         let items = dragged_items(row.item, row.picked, row.picked_songs);
-        // Keep the source index for moves within an editable playlist.
+        // Keep the source index for moves within an editable playlist, or
+        // within the manually queued section while it can be rewritten.
         let from = (items.len() == 1)
             .then(|| match row.context {
                 RowContext::Context {
                     editable_playlist: Some((id, _)),
                     ..
                 } => Some((id.clone(), row.index as u32)),
+                RowContext::Queue
+                    if row.index < app.queued_rows_len() && app.queue_locally_reorderable() =>
+                {
+                    Some(("queue".to_string(), row.index as u32))
+                }
                 _ => None,
             })
             .flatten();
@@ -1216,7 +1362,8 @@ fn track_row_contents(
                 if let Some(added) = row.added_at.filter(|a| !a.starts_with("1970-01-01"))
                     && cols.added == 0.0
                 {
-                    let label = util::format_relative_date(added, jiff::Timestamp::now());
+                    let label =
+                        util::format_relative_date(app.locale, added, jiff::Timestamp::now());
                     theme::text(
                         &mut child,
                         "•",
@@ -1261,7 +1408,8 @@ fn track_row_contents(
                         theme::regular(12.0),
                         palette.secondary.gamma_multiply(0.6),
                     );
-                    let label = util::format_relative_date(added, jiff::Timestamp::now());
+                    let label =
+                        util::format_relative_date(app.locale, added, jiff::Timestamp::now());
                     theme::text(&mut child, &label, theme::regular(12.0), palette.secondary);
                     if label.ends_with(" ago") {
                         ui.ctx()
@@ -1308,7 +1456,8 @@ fn track_row_contents(
                             theme::regular(12.0),
                             palette.secondary.gamma_multiply(0.6),
                         );
-                        let label = util::format_relative_date(added, jiff::Timestamp::now());
+                        let label =
+                            util::format_relative_date(app.locale, added, jiff::Timestamp::now());
                         theme::text(ui, &label, theme::regular(12.0), palette.secondary);
                         if label.ends_with(" ago") {
                             ui.ctx()
@@ -1338,7 +1487,8 @@ fn track_row_contents(
                             theme::regular(12.0),
                             palette.secondary.gamma_multiply(0.6),
                         );
-                        let label = util::format_relative_date(added, jiff::Timestamp::now());
+                        let label =
+                            util::format_relative_date(app.locale, added, jiff::Timestamp::now());
                         theme::text(ui, &label, theme::regular(12.0), palette.secondary);
                         if label.ends_with(" ago") {
                             ui.ctx()
@@ -1408,7 +1558,7 @@ fn track_row_contents(
             .filter(|added| !added.starts_with("1970-01-01"))
         {
             let cell = Rect::from_min_size(pos2(x, rect.top()), vec2(cols.added, row_height));
-            let label = util::format_relative_date(added, jiff::Timestamp::now());
+            let label = util::format_relative_date(app.locale, added, jiff::Timestamp::now());
             painter.text(
                 pos2(cell.left(), cell.center().y),
                 egui::Align2::LEFT_CENTER,
@@ -1448,11 +1598,11 @@ fn track_row_contents(
                 (Icon::Heart, palette.secondary)
             };
             let tooltip = if saved == Some(true) {
-                "Remove from Liked Songs"
+                gettext(app.locale, "Remove from Liked Songs")
             } else {
-                "Save to Liked Songs"
+                gettext(app.locale, "Save to Liked Songs")
             };
-            if theme::icon_button(&mut child, icon, 16.0, color, palette.text, tooltip).clicked() {
+            if theme::icon_button(&mut child, icon, 16.0, color, palette.text, &tooltip).clicked() {
                 app.actions
                     .push(Action::ToggleSaved(row.item.uri().to_string()));
             }
@@ -1495,7 +1645,7 @@ fn track_row_contents(
             18.0,
             palette.secondary,
             palette.text,
-            "More",
+            &gettext(app.locale, "More"),
         );
         egui::Popup::menu(&more)
             .id(menu_id)
@@ -1624,19 +1774,27 @@ fn dragged_items(
     }
 }
 
-fn drag_label(track: &DragTrack) -> String {
+fn drag_label(locale: Locale, track: &DragTrack) -> String {
     match track.items.as_slice() {
         [] => track.title.clone(),
         [item] => item.name().to_string(),
-        [first, rest @ ..] => format!("{} + {} more", first.name(), rest.len()),
+        [first, rest @ ..] => ngettext(
+            locale,
+            // Translators: The label beside the pointer while songs are dragged. {name} is the first song's name and {count} how many more songs are dragged with it.
+            "{name} + {count} more",
+            "{name} + {count} more",
+            rest.len() as u32,
+        )
+        .replace("{name}", first.name())
+        .replace("{count}", &rest.len().to_string()),
     }
 }
 
 /// The chip that rides the pointer while a song is being dragged.
-pub fn drag_ghost(ctx: &egui::Context, palette: &Palette) {
+pub fn drag_ghost(ctx: &egui::Context, palette: &Palette, locale: Locale) {
     // A song and a sidebar row ride the pointer the same way.
     let chip = egui::DragAndDrop::payload::<DragTrack>(ctx)
-        .map(|track| (drag_label(&track), track.image.clone()))
+        .map(|track| (drag_label(locale, &track), track.image.clone()))
         .or_else(|| {
             egui::DragAndDrop::payload::<DragEntry>(ctx)
                 .map(|entry| (entry.title.clone(), entry.image.clone()))
@@ -1703,10 +1861,13 @@ pub fn explicit_badge(ui: &mut Ui, palette: &Palette) {
 /// The header row above a track table.
 /// The column headings above a track table. Answers with the heading that
 /// was clicked, so the table can sort by it.
-#[expect(clippy::fn_params_excessive_bools)]
+// The column switches and the language are independent inputs of one
+// drawing call; a struct would exist only to carry them here.
+#[expect(clippy::fn_params_excessive_bools, clippy::too_many_arguments)]
 pub fn table_header(
     ui: &mut Ui,
     palette: &Palette,
+    locale: Locale,
     show_album: bool,
     show_added: bool,
     show_added_by: bool,
@@ -1734,7 +1895,12 @@ pub fn table_header(
             egui::WidgetInfo::labeled(
                 egui::WidgetType::Button,
                 ui.is_enabled(),
-                format!("Sort by {text}"),
+                gettext(
+                    locale,
+                    // Translators: {column} is a column heading of a song list, such as Title.
+                    "Sort by {column}",
+                )
+                .replace("{column}", text),
             )
         });
         theme::focus_ring(ui, &response);
@@ -1782,7 +1948,7 @@ pub fn table_header(
             egui::WidgetInfo::labeled(
                 egui::WidgetType::Button,
                 ui.is_enabled(),
-                "Sort by playlist order",
+                gettext(locale, "Sort by playlist order"),
             )
         });
         theme::focus_ring(ui, &response);
@@ -1816,7 +1982,10 @@ pub fn table_header(
                 egui::Stroke::NONE,
             ));
         }
-        if response.on_hover_text("Original order, reversed").clicked() {
+        if response
+            .on_hover_text(gettext(locale, "Original order, reversed"))
+            .clicked()
+        {
             number_clicked = true;
         }
     }
@@ -1824,7 +1993,12 @@ pub fn table_header(
     if show_cover {
         x += 52.0;
     }
-    heading(ui, x, "TITLE", SortColumn::Title);
+    heading(
+        ui,
+        x,
+        &pgettext(locale, "column heading", "TITLE"),
+        SortColumn::Title,
+    );
     let medium = width > 560.0;
     let wide = width > 760.0;
     let album_width = if show_album && medium {
@@ -1842,15 +2016,30 @@ pub fn table_header(
     let right_fixed = 36.0 + 56.0 + 36.0 + 8.0;
     let mut cx = rect.right() - right_fixed - added_width - added_by_width - album_width;
     if album_width > 0.0 {
-        heading(ui, cx, "ALBUM", SortColumn::Album);
+        heading(
+            ui,
+            cx,
+            &pgettext(locale, "column heading", "ALBUM"),
+            SortColumn::Album,
+        );
         cx += album_width;
     }
     if added_by_width > 0.0 {
-        heading(ui, cx, "ADDED BY", SortColumn::AddedBy);
+        heading(
+            ui,
+            cx,
+            &pgettext(locale, "column heading", "ADDED BY"),
+            SortColumn::AddedBy,
+        );
         cx += added_by_width;
     }
     if added_width > 0.0 {
-        heading(ui, cx, "DATE ADDED", SortColumn::Added);
+        heading(
+            ui,
+            cx,
+            &pgettext(locale, "column heading", "DATE ADDED"),
+            SortColumn::Added,
+        );
     }
     if number_clicked {
         clicked = Some(SortColumn::Index);
@@ -1869,7 +2058,7 @@ pub fn table_header(
         egui::WidgetInfo::labeled(
             egui::WidgetType::Button,
             ui.is_enabled(),
-            "Sort by duration",
+            gettext(locale, "Sort by duration"),
         )
     });
     theme::focus_ring(ui, &response);
@@ -1898,7 +2087,10 @@ pub fn table_header(
             egui::Stroke::NONE,
         ));
     }
-    if response.on_hover_text("Sort by duration").clicked() {
+    if response
+        .on_hover_text(gettext(locale, "Sort by duration"))
+        .clicked()
+    {
         clicked = Some(SortColumn::Duration);
     }
     ui.painter().hline(
@@ -2071,7 +2263,7 @@ pub fn card(
                 palette.accent,
                 palette.accent_hover,
                 palette.on_accent,
-                "Play",
+                &gettext(app.locale, "Play"),
             )
             .clicked();
         }
@@ -2340,7 +2532,7 @@ pub fn chips<T: PartialEq + Copy>(
 }
 
 /// A text input with the native clipboard actions and a selection-aware menu.
-pub fn text_edit(ui: &mut Ui, edit: egui::TextEdit<'_>) -> egui::Response {
+pub fn text_edit(ui: &mut Ui, locale: Locale, edit: egui::TextEdit<'_>) -> egui::Response {
     let mut output = edit.show(ui);
     let response = &output.response;
     let selection_id = response.id.with("edit-menu-selection");
@@ -2367,11 +2559,26 @@ pub fn text_edit(ui: &mut Ui, edit: egui::TextEdit<'_>) -> egui::Response {
         .is_some_and(|range| !range.is_empty());
     response.context_menu(|ui| {
         for (label, enabled, command) in [
-            ("Cut", selected, egui::ViewportCommand::RequestCut),
-            ("Copy", selected, egui::ViewportCommand::RequestCopy),
-            ("Paste", true, egui::ViewportCommand::RequestPaste),
+            (
+                gettext(locale, "Cut"),
+                selected,
+                egui::ViewportCommand::RequestCut,
+            ),
+            (
+                gettext(locale, "Copy"),
+                selected,
+                egui::ViewportCommand::RequestCopy,
+            ),
+            (
+                gettext(locale, "Paste"),
+                true,
+                egui::ViewportCommand::RequestPaste,
+            ),
         ] {
-            if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
+            if ui
+                .add_enabled(enabled, egui::Button::new(label.as_ref()))
+                .clicked()
+            {
                 // Menu clicks take focus. Restore this field before the native
                 // integration delivers the clipboard event on the next frame.
                 response.request_focus();
@@ -2380,7 +2587,7 @@ pub fn text_edit(ui: &mut Ui, edit: egui::TextEdit<'_>) -> egui::Response {
             }
         }
         ui.separator();
-        if ui.button("Select all").clicked() {
+        if ui.button(gettext(locale, "Select all").as_ref()).clicked() {
             let end = output.galley.job.text.chars().count();
             output
                 .state
@@ -2401,6 +2608,7 @@ pub fn text_edit(ui: &mut Ui, edit: egui::TextEdit<'_>) -> egui::Response {
 pub fn search_field(
     ui: &mut Ui,
     palette: &Palette,
+    locale: Locale,
     id: egui::Id,
     text: &mut String,
     hint: &str,
@@ -2451,6 +2659,7 @@ pub fn search_field(
     };
     let response = text_edit(
         &mut child,
+        locale,
         egui::TextEdit::singleline(text)
             .id(id)
             .hint_text(egui::RichText::new(hint).color(palette.dim))
@@ -2479,7 +2688,7 @@ pub fn search_field(
             15.0,
             palette.secondary,
             palette.text,
-            "Clear",
+            &gettext(locale, "Clear"),
         )
         .clicked()
         {
@@ -2525,11 +2734,21 @@ pub fn setting_row(
     description: &str,
     control: impl FnOnce(&mut Ui),
 ) {
+    // The text wraps beside the control. Most controls fit in 260 points;
+    // a wider one, such as a row of choices, is measured as it is drawn so
+    // a longer description (or a longer translation) wraps before it
+    // instead of running underneath.
+    // Keyed by the row's place rather than its label: two rows can share a
+    // title, and sharing one width would make them take turns.
+    let control_id = ui.next_auto_id().with("setting-row-control");
+    let reserved = ui
+        .data(|data| data.get_temp::<f32>(control_id))
+        .map_or(260.0, |width| (width + 16.0).max(260.0));
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             // A frame can arrive before the window has its size (a fullscreen
             // request on Wayland answers a frame late), so never go negative.
-            ui.set_width((ui.available_width() - 260.0).max(0.0));
+            ui.set_width((ui.available_width() - reserved).max(0.0));
             theme::text(ui, label, theme::medium(14.0), palette.text);
             if !description.is_empty() {
                 ui.add(
@@ -2542,7 +2761,20 @@ pub fn setting_row(
                 );
             }
         });
-        ui.with_layout(Layout::right_to_left(Align::Center), control);
+        let width = ui
+            .with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let start = ui.cursor().right();
+                control(ui);
+                start - ui.min_rect().left()
+            })
+            .inner;
+        let known = ui.data(|data| data.get_temp::<f32>(control_id));
+        if known.is_none_or(|known| (known - width).abs() > 0.5) {
+            ui.data_mut(|data| data.insert_temp(control_id, width));
+            // Lay the row out again at the width just measured rather than
+            // show one frame of overlapping text.
+            ui.ctx().request_discard("a settings control changed width");
+        }
     });
     ui.add_space(10.0);
 }
@@ -2551,6 +2783,7 @@ pub fn setting_row(
 pub fn labeled_field(
     ui: &mut Ui,
     palette: &Palette,
+    locale: Locale,
     label: &str,
     value: &mut String,
     hint: &str,
@@ -2567,6 +2800,7 @@ pub fn labeled_field(
                 .show(ui, |ui| {
                     text_edit(
                         ui,
+                        locale,
                         egui::TextEdit::singleline(value)
                             .hint_text(egui::RichText::new(hint).color(palette.dim))
                             .font(theme::regular(14.0))
@@ -2587,6 +2821,7 @@ pub fn labeled_field(
 pub fn proxy_manual_form(
     ui: &mut Ui,
     palette: &Palette,
+    locale: Locale,
     host: &mut String,
     port: &mut String,
     username: &mut String,
@@ -2599,14 +2834,34 @@ pub fn proxy_manual_form(
         let half = ((ui.available_width() - 12.0) / 2.0).max(80.0);
         ui.vertical(|ui| {
             ui.set_width(half);
-            if labeled_field(ui, palette, "Host", host, "127.0.0.1", false).changed() {
+            if labeled_field(
+                ui,
+                palette,
+                locale,
+                &gettext(locale, "Host"),
+                host,
+                "127.0.0.1",
+                false,
+            )
+            .changed()
+            {
                 changed = true;
                 address_changed = true;
             }
         });
         ui.vertical(|ui| {
             ui.set_width(half);
-            if labeled_field(ui, palette, "Port", port, "1080", false).changed() {
+            if labeled_field(
+                ui,
+                palette,
+                locale,
+                &gettext(locale, "Port"),
+                port,
+                "1080",
+                false,
+            )
+            .changed()
+            {
                 changed = true;
                 address_changed = true;
             }
@@ -2618,7 +2873,8 @@ pub fn proxy_manual_form(
         let half = ((ui.available_width() - 12.0) / 2.0).max(80.0);
         ui.vertical(|ui| {
             ui.set_width(half);
-            if labeled_field(ui, palette, "Username", username, "Username", false).changed() {
+            let label = gettext(locale, "Username");
+            if labeled_field(ui, palette, locale, &label, username, &label, false).changed() {
                 changed = true;
                 address_changed = true;
             }
@@ -2628,7 +2884,8 @@ pub fn proxy_manual_form(
             if address_changed {
                 password.clear();
             }
-            if labeled_field(ui, palette, "Password", password, "Password", true).changed() {
+            let label = gettext(locale, "Password");
+            if labeled_field(ui, palette, locale, &label, password, &label, true).changed() {
                 changed = true;
             }
         });
@@ -2636,14 +2893,21 @@ pub fn proxy_manual_form(
     changed
 }
 
-pub fn proxy_scope_note(ui: &mut Ui, palette: &Palette, mode: crate::settings::ProxyMode) {
+pub fn proxy_scope_note(
+    ui: &mut Ui,
+    palette: &Palette,
+    locale: Locale,
+    mode: crate::settings::ProxyMode,
+) {
     let note = match mode {
-        crate::settings::ProxyMode::Http => {
-            "Proxy login applies to Web requests. Local playback uses this proxy only without a login."
-        }
-        crate::settings::ProxyMode::Socks => {
-            "Spotify hostnames are resolved by the proxy. Local playback connects directly."
-        }
+        crate::settings::ProxyMode::Http => gettext(
+            locale,
+            "Proxy login applies to Web requests. Local playback uses this proxy only without a login.",
+        ),
+        crate::settings::ProxyMode::Socks => gettext(
+            locale,
+            "Spotify hostnames are resolved by the proxy. Local playback connects directly.",
+        ),
         crate::settings::ProxyMode::Off | crate::settings::ProxyMode::System => return,
     };
     ui.add(
@@ -2688,7 +2952,15 @@ mod tests {
                     },
                     |ui| {
                         let [host, port, username, password] = &mut fields;
-                        proxy_manual_form(ui, &Palette::dark(), host, port, username, password);
+                        proxy_manual_form(
+                            ui,
+                            &Palette::dark(),
+                            Locale::English,
+                            host,
+                            port,
+                            username,
+                            password,
+                        );
                     },
                 );
                 output.textures_delta.clear();
@@ -2761,12 +3033,14 @@ mod tests {
                     self.response = Some(if self.multiline {
                         text_edit(
                             ui,
+                            Locale::English,
                             egui::TextEdit::multiline(&mut self.text).id_source("edit"),
                         )
                     } else {
                         search_field(
                             ui,
                             &Palette::dark(),
+                            Locale::English,
                             egui::Id::new("edit"),
                             &mut self.text,
                             "Search",
@@ -3332,7 +3606,7 @@ mod tests {
             ],
             from: None,
         };
-        assert_eq!(drag_label(&track), "Kora Panna + 1 more");
+        assert_eq!(drag_label(Locale::English, &track), "Kora Panna + 1 more");
     }
 
     #[test]
@@ -3455,6 +3729,64 @@ mod tests {
         assert!(
             child_rendered,
             "menu_submenu must open child contents when Enter is pressed while focused"
+        );
+    }
+
+    /// A settings row whose control is wider than the usual 260 points,
+    /// like the audio quality choices, wraps its description before the
+    /// control instead of running underneath it.
+    #[test]
+    fn a_setting_row_wraps_its_description_before_a_wide_control() {
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        crate::theme::install(&ctx);
+        let palette = crate::theme::Palette::dark();
+        // Long enough to wrap, as a translation of a short English line can be.
+        let description = "Höhere Bitraten verbrauchen mehr Daten und Cache-Speicher, \
+            besonders unterwegs, und brauchen länger, bis die Wiedergabe beginnt, wenn die \
+            Verbindung langsam ist.";
+        let frame = || {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1000.0, 400.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    super::setting_row(ui, &palette, "Audioqualität", description, |ui| {
+                        let _ = ui.button("Sehr hoch · 320 kbps");
+                        let _ = ui.button("Hoch · 160 kbps");
+                        let _ = ui.button("Normal · 96 kbps");
+                        ui.add_space(300.0);
+                    });
+                },
+            );
+            output.textures_delta.clear();
+            output.platform_output.accesskit_update.unwrap()
+        };
+        frame();
+        let tree = frame();
+        let bounds = |label: &str| {
+            tree.nodes
+                .iter()
+                .find(|(_, node)| {
+                    [node.label(), node.value()]
+                        .into_iter()
+                        .flatten()
+                        .any(|text| text.starts_with(label))
+                })
+                .and_then(|(_, node)| node.bounds())
+                .unwrap_or_else(|| panic!("{label} is drawn"))
+        };
+        let text = bounds("Höhere Bitraten");
+        let control = bounds("Normal · 96 kbps");
+        assert!(
+            text.x1 <= control.x0,
+            "the description ends at {} but the controls start at {}",
+            text.x1,
+            control.x0
         );
     }
 }

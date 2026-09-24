@@ -6,6 +6,7 @@ use egui::{Align, CornerRadius, Layout, Rect, Sense, Vec2, pos2, vec2};
 
 use crate::api::models::{Artist, ArtistRef, PlayableItem, SearchResults, pick_image};
 use crate::app::App;
+use crate::i18n::gettext;
 use crate::model::{Action, Loadable, Page, RowContext, SearchFilter};
 use crate::theme::{self, Icon};
 
@@ -18,8 +19,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         return;
     }
     ui.add_space(4.0);
-    let options: Vec<(SearchFilter, &str)> =
-        SearchFilter::ALL.iter().map(|f| (*f, f.label())).collect();
+    let labels: Vec<_> = SearchFilter::ALL
+        .iter()
+        .map(|f| (*f, f.label(app.locale)))
+        .collect();
+    let options: Vec<(SearchFilter, &str)> = labels
+        .iter()
+        .map(|(filter, label)| (*filter, label.as_ref()))
+        .collect();
     if let Some(filter) = widgets::chips(ui, &palette, &options, app.search.filter) {
         app.actions.push(Action::SetSearchFilter(filter));
     }
@@ -55,8 +62,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             ui,
             &palette,
             Icon::Search,
-            &format!("No results for “{}”", app.search.committed),
-            "Check the spelling, or try fewer words.",
+            // Translators: {query} is the text the user searched for.
+            &gettext(app.locale, "No results for “{query}”")
+                .replace("{query}", &app.search.committed),
+            &gettext(app.locale, "Check the spelling, or try fewer words."),
         );
         return;
     }
@@ -79,12 +88,15 @@ fn recent(app: &mut App, ui: &mut egui::Ui) {
             ui,
             &palette,
             Icon::Search,
-            "Search Spotify",
-            "Find songs, artists, albums, playlists, and podcasts.",
+            &gettext(app.locale, "Search Spotify"),
+            &gettext(
+                app.locale,
+                "Find songs, artists, albums, playlists, and podcasts.",
+            ),
         );
         return;
     }
-    theme::section_title(ui, &palette, "Recent searches");
+    theme::section_title(ui, &palette, &gettext(app.locale, "Recent searches"));
     ui.add_space(6.0);
     let history = app.settings.search_history.clone();
     ui.horizontal_wrapped(|ui| {
@@ -102,6 +114,7 @@ fn recent(app: &mut App, ui: &mut egui::Ui) {
 
 fn all(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
     let palette = app.palette;
+    let locale = app.locale;
     let query = app.search.committed.to_lowercase();
     let top_artist = results
         .artists
@@ -121,7 +134,7 @@ fn all(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
         };
         ui.vertical(|ui| {
             ui.set_width(top_width);
-            theme::section_title(ui, &palette, "Top result");
+            theme::section_title(ui, &palette, &gettext(locale, "Top result"));
             ui.add_space(4.0);
             if let Some(artist) = top_artist {
                 top_result(
@@ -129,7 +142,7 @@ fn all(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
                     ui,
                     pick_image(&artist.images, 640),
                     &artist.name,
-                    TopResultSubtitle::Text("Artist"),
+                    TopResultSubtitle::Text(&gettext(locale, "Artist")),
                     true,
                     Some(artist.uri.clone()),
                     Page::Artist(artist.id.clone()),
@@ -170,12 +183,15 @@ fn all(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
                     ui,
                     pick_image(&album.images, 640),
                     &album.name,
-                    TopResultSubtitle::Text(&format!(
-                        "Album • {}",
-                        crate::api::models::join_names(
-                            album.artists.iter().map(|a| a.name.as_str())
-                        )
-                    )),
+                    TopResultSubtitle::Text(
+                        // Translators: {artists} is the album's artist names.
+                        &gettext(locale, "Album • {artists}").replace(
+                            "{artists}",
+                            &crate::api::models::join_names(
+                                album.artists.iter().map(|a| a.name.as_str()),
+                            ),
+                        ),
+                    ),
                     false,
                     Some(album.uri.clone()),
                     Page::Album(album.id.clone()),
@@ -193,7 +209,11 @@ fn all(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
                     ui,
                     pick_image(&playlist.images, 640),
                     &playlist.name,
-                    TopResultSubtitle::Text(&format!("Playlist • {}", playlist.owner_name())),
+                    TopResultSubtitle::Text(
+                        // Translators: {owner} is the name of the playlist's owner.
+                        &gettext(locale, "Playlist • {owner}")
+                            .replace("{owner}", playlist.owner_name()),
+                    ),
                     false,
                     Some(playlist.uri.clone()),
                     Page::Playlist(playlist.id.clone()),
@@ -214,7 +234,11 @@ fn all(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
                     ui,
                     pick_image(&show.images, 640),
                     &show.name,
-                    TopResultSubtitle::Text(&format!("Podcast • {}", show.publisher)),
+                    TopResultSubtitle::Text(
+                        // Translators: {publisher} is the podcast's publisher.
+                        &gettext(locale, "Podcast • {publisher}")
+                            .replace("{publisher}", &show.publisher),
+                    ),
                     false,
                     Some(show.uri.clone()),
                     Page::Show(show.id.clone()),
@@ -245,7 +269,7 @@ fn all(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
         .as_ref()
         .is_some_and(|page| !page.items.is_empty())
     {
-        theme::section_title(ui, &palette, "Episodes");
+        theme::section_title(ui, &palette, &gettext(locale, "Episodes"));
         ui.add_space(4.0);
         episodes(app, ui, results, 4);
     }
@@ -321,7 +345,8 @@ fn top_result(
                 child.spacing_mut().item_spacing.x = 0.0;
                 theme::text(
                     &mut child,
-                    "Song • ",
+                    // Translators: Precedes the song's artist names, which follow as links.
+                    gettext(app.locale, "Song • ").as_ref(),
                     theme::regular(13.5),
                     palette.secondary,
                 );
@@ -362,7 +387,7 @@ fn top_result(
                 palette.accent,
                 palette.accent_hover,
                 palette.on_accent,
-                "Play",
+                &gettext(app.locale, "Play"),
             )
             .clicked()
             {
@@ -397,7 +422,7 @@ fn songs(app: &mut App, ui: &mut egui::Ui, results: &SearchResults, limit: usize
     if page.items.is_empty() {
         return;
     }
-    theme::section_title(ui, &palette, "Songs");
+    theme::section_title(ui, &palette, &gettext(app.locale, "Songs"));
     ui.add_space(4.0);
     let uris: Arc<[String]> = page
         .items
@@ -442,7 +467,7 @@ fn artist_card(app: &mut App, ui: &mut egui::Ui, artist: &Artist) {
         app,
         pick_image(&artist.images, 640),
         &artist.name,
-        "Artist",
+        &gettext(app.locale, "Artist"),
         true,
         true,
     );
@@ -471,11 +496,17 @@ fn shelf_artists(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
     if page.items.is_empty() {
         return;
     }
-    widgets::shelf(ui, &palette, "search-artists", "Artists", |ui| {
-        for artist in &page.items {
-            artist_card(app, ui, artist);
-        }
-    });
+    widgets::shelf(
+        ui,
+        &palette,
+        "search-artists",
+        &gettext(app.locale, "Artists"),
+        |ui| {
+            for artist in &page.items {
+                artist_card(app, ui, artist);
+            }
+        },
+    );
 }
 
 fn artists_grid(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
@@ -527,11 +558,17 @@ fn shelf_albums(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
     if page.items.is_empty() {
         return;
     }
-    widgets::shelf(ui, &palette, "search-albums", "Albums", |ui| {
-        for album in &page.items {
-            album_card(app, ui, album);
-        }
-    });
+    widgets::shelf(
+        ui,
+        &palette,
+        "search-albums",
+        &gettext(app.locale, "Albums"),
+        |ui| {
+            for album in &page.items {
+                album_card(app, ui, album);
+            }
+        },
+    );
 }
 
 fn albums_grid(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
@@ -549,7 +586,8 @@ fn playlist_card(app: &mut App, ui: &mut egui::Ui, playlist: &crate::api::models
         app,
         pick_image(&playlist.images, 640),
         &playlist.name,
-        &format!("By {}", playlist.owner_name()),
+        // Translators: {owner} is the name of the playlist's owner.
+        &gettext(app.locale, "By {owner}").replace("{owner}", playlist.owner_name()),
         false,
         true,
     );
@@ -587,11 +625,17 @@ fn shelf_playlists(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
     if page.items.is_empty() {
         return;
     }
-    widgets::shelf(ui, &palette, "search-playlists", "Playlists", |ui| {
-        for playlist in &page.items {
-            playlist_card(app, ui, playlist);
-        }
-    });
+    widgets::shelf(
+        ui,
+        &palette,
+        "search-playlists",
+        &gettext(app.locale, "Playlists"),
+        |ui| {
+            for playlist in &page.items {
+                playlist_card(app, ui, playlist);
+            }
+        },
+    );
 }
 
 fn playlists_grid(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
@@ -632,11 +676,17 @@ fn shelf_shows(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
     if page.items.is_empty() {
         return;
     }
-    widgets::shelf(ui, &palette, "search-shows", "Podcasts", |ui| {
-        for show in &page.items {
-            show_card(app, ui, show);
-        }
-    });
+    widgets::shelf(
+        ui,
+        &palette,
+        "search-shows",
+        &gettext(app.locale, "Podcasts"),
+        |ui| {
+            for show in &page.items {
+                show_card(app, ui, show);
+            }
+        },
+    );
 }
 
 fn shows_grid(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {

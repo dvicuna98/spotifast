@@ -7,22 +7,33 @@ nav_order: 3
 
 ## Middle-click autoscroll
 
-On Windows, since 0.8.0, middle-click a scrolling list or its empty background,
-then move the pointer
-away from the starting point. That list follows the pointer, faster as the
-distance grows. Moving across another pane keeps the original list in control.
+On Windows, since 0.8.0, and on Linux once turned on, middle-click a scrolling
+list or its empty background, then move the pointer away from the starting
+point. That list follows the pointer, faster as the distance grows. Moving across another pane keeps the original list in control.
 A small dead zone prevents an ordinary middle-click from moving the view.
 Click again, press Esc, turn the wheel, or switch to another window to stop.
 Buttons and text fields keep their normal middle-click behavior.
 
-This works automatically on Windows, with no setting to enable. Linux and
-macOS retain their existing middle-click behavior.
+This works automatically on Windows, with no setting to enable. On Linux, turn
+on **Middle-click autoscroll** under **Settings > Appearance**. It is off by
+default, because Linux desktops usually paste the primary selection on middle
+click. macOS retains its existing middle-click behavior.
 
 ## Scrolling shelves
 
 Point at a horizontal shelf, such as Made for you or Recently played on
 Home, and hold `Shift` while turning the mouse wheel. The shelf moves while
 the surrounding page stays put. Release `Shift` to scroll the page normally.
+
+## Podcasts on Home
+
+On `main`, after 0.9.1, Home has a **Your podcasts** shelf below Recently
+played. It lists episodes you have started and not finished, with the time
+left, followed by each podcast's newest episode if it came out in the last 30
+days and you have not started it, marked **New**. It covers the eight podcasts
+you saved most recently and the five newest episodes of each. Audiobooks are
+left out. The shelf is hidden when there is nothing to show. Click a card to
+open the podcast, or use its play button to play the episode.
 
 ## Dragging beyond the visible list
 
@@ -50,6 +61,24 @@ the row highlight without an extra outline.
 
 Dragging an unselected row copies just that song. Reordering within a
 playlist still moves one song at a time.
+
+## Copying and pasting songs
+
+On `main`, after 0.9.1, press `Ctrl+A` (`Cmd+A` on macOS) in a playlist,
+album or Liked Songs to select every song the list shows. A
+filter narrows the selection to the matching songs. In a long playlist that
+is still loading, it selects the songs loaded so far.
+
+`Ctrl+C` (`Cmd+C`) copies the selected songs' `open.spotify.com` links, one
+per line, ready to paste into another playlist, a message, or Spotify's own
+apps. `Ctrl+V` (`Cmd+V`) in a playlist you can edit adds every song link on
+the clipboard to its end. Links copied from Spotifast add their rows at
+once; links from elsewhere appear as soon as Spotify names the songs. Songs
+already in the playlist ask before being added twice, and links that are
+not songs, such as albums, are skipped.
+
+These keys edit the text instead while a search, filter or other text field
+has focus.
 
 Clear any playlist filter or sort before placing songs between rows, so the
 visible positions match Spotify's order. A duplicate confirmation keeps the
@@ -227,13 +256,23 @@ The choice survives restarts. The mini player stays visible; the tray icon,
 **Ctrl+M**, the skin logo, and launching Spotifast again remain ways to reach
 the app. Returning to the main window always restores its taskbar button.
 Changing the option while the mini player is open replaces that window while
-playback continues. This setting is available on Windows; it does not change
-Linux panels or the macOS Dock.
+playback continues. This setting is available on Windows and in Linux X11
+sessions, where it hides the mini player from panels and task switchers that
+follow the window manager's skip-taskbar state. Wayland has no standard way
+for an app to leave the taskbar, so the option is not offered there; use your
+desktop's window rules instead. It does not change the macOS Dock.
 
 On Windows, since 0.8.0, the mini player starts on the current desktop if its
 saved title bar is outside every connected monitor’s work area. Positions on
 connected secondary monitors still restore. Reinstalling preserves settings;
 it is not needed to recover a position left on an unplugged display.
+
+## macOS Dock menu
+
+Right-click or Control-click Spotifast's Dock icon for **Play** (or **Pause**
+while music plays), **Next**, and **Previous**, above the standard Dock items.
+They control the same playing device as the player bar and keep working while
+the window is closed to the menu bar.
 
 ## Keeping the mini player above other windows
 
@@ -273,6 +312,22 @@ Storage shows its location and has a **Clear history** button.
 On Windows, the main window's minimize, maximize, and close buttons share the
 top bar with Spotifast's controls. Drag an empty part of that bar to move or
 snap the window, and drag a window edge or corner to resize it.
+
+## Radio
+
+On `main`, after 0.9.1, **Go to song radio** in a song's menu opens a page
+of songs Spotify picks to go with it, without starting playback. Playlist,
+album, and artist menus have **Go to playlist radio**, **Go to album radio**,
+and **Go to artist radio**.
+
+Spotify mixes a radio afresh each time it is asked, so the page keeps the
+songs it shows: **Play**, **Shuffle**, and a double-clicked row play those
+songs, and the queue names the radio. Choose **Refresh** in the page's **…**
+menu for a new mix. **Save as playlist** creates a private playlist named
+after the radio with the songs on the page.
+
+Radio comes from Spotify's playback service, so it needs playback on this
+computer to be set up; the page can then play on any device.
 
 ## Playlist covers
 

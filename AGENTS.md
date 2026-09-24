@@ -124,9 +124,13 @@ maintainer approval and an exact force-with-lease guard; keep a recovery ref.
 
 Build caches save hours of recompiling, so keep them, but keep them small:
 
-- Use one build cache per project: `target/` in the main checkout. Git
-  worktrees and parallel agents set `CARGO_TARGET_DIR` to that directory
-  instead of building their own; a fresh target costs 20 GB or more.
+- Use one build cache per project: `target/` in the main checkout. A git
+  worktree used on its own may set `CARGO_TARGET_DIR` to that directory.
+  Worktrees that build at the same time must not share it: cargo names
+  their artifacts alike, so one worktree's test run can execute another's
+  binary and report its result. Give each concurrent worktree its own
+  target under `~/.cache/` and delete it when that work is done; a fresh
+  target costs 20 GB or more.
 - Never put build output or large scratch files in `/tmp`. It is a small
   in-memory filesystem with a per-user quota, and filling it breaks every
   shell on the machine.

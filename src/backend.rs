@@ -6,7 +6,7 @@
 //! the interface with `request_repaint`, so the app stays event-driven and
 //! idle when nothing is happening.
 
-use std::collections::{BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -43,6 +43,10 @@ const AUDIOBOOK_BATCH: usize = 50;
 /// Songs SpotSurf keeps whole in memory: the one playing, the one queued after
 /// it, and the one before, for Previous. About 13 MB each.
 const SPOTSURF_HELD: usize = 3;
+/// How long resolving a radio station and its songs may take.
+const RADIO_TIMEOUT: Duration = Duration::from_secs(20);
+/// Newest episodes read from each saved podcast for Home's podcast shelf.
+const HOME_EPISODES_PER_SHOW: u32 = 5;
 pub const PLAYLIST_PAGE_SIZE: u32 = 50;
 const RECONNECT_WINDOW: Duration = Duration::from_secs(600);
 const RECONNECT_LIMIT: usize = 6;
@@ -138,6 +142,7 @@ pub enum ApiRequest {
     },
     MyPlaylists {
         offset: u32,
+        generation: u64,
     },
     Playlist {
         id: String,
@@ -268,6 +273,12 @@ pub enum ApiRequest {
         id: String,
         offset: u32,
     },
+    /// The newest episodes of a few saved podcasts, for Home. The shows
+    /// are read one after another, not all at once.
+    HomeEpisodes {
+        shows: Vec<Show>,
+        generation: u64,
+    },
     Track {
         id: String,
     },
@@ -363,6 +374,7 @@ pub enum ApiResponse {
     },
     MyPlaylists {
         offset: u32,
+        generation: u64,
         result: ApiResult<Page<Playlist>>,
     },
     Playlist {
@@ -497,6 +509,11 @@ pub enum ApiResponse {
         id: String,
         offset: u32,
         result: ApiResult<Page<Episode>>,
+    },
+    /// Each show with its newest episodes, in the order asked for.
+    HomeEpisodes {
+        generation: u64,
+        result: ApiResult<Vec<(Show, Vec<Episode>)>>,
     },
     Track {
         id: String,
@@ -703,6 +720,18 @@ pub enum Command {
     AlbumTypes(Vec<String>),
     /// Ask the streaming session which saved shows are audiobooks.
     AudiobookShows(Vec<String>),
+    /// Resolve Spotify's radio seeded by `seed` through the streaming session.
+    Radio {
+        seed: String,
+        generation: u64,
+    },
+    /// Internal: a radio finished resolving for the session it started in.
+    RadioResolved {
+        session_generation: u64,
+        seed: String,
+        generation: u64,
+        result: Result<Vec<crate::api::models::Track>, String>,
+    },
     /// Internal: an audiobook lookup finished for the session it started in.
     AudiobookShowsResolved {
         session_generation: u64,
@@ -798,6 +827,12 @@ pub enum Event {
     /// Saved shows that Spotify's metadata marks as audiobooks. librespot
     /// cannot play them, so the Podcasts shelf leaves them out.
     AudiobookShows(Vec<String>),
+    /// The songs of the radio seeded by `seed`, for the request `generation`.
+    Radio {
+        seed: String,
+        generation: u64,
+        result: Result<Vec<crate::api::models::Track>, String>,
+    },
     /// Whether Spotify's internal metadata positively identifies an album as an EP.
     AlbumType {
         uri: String,
@@ -887,6 +922,8 @@ pub struct Backend {
     player_commands: std::sync::Mutex<Vec<PlayerCommand>>,
     #[cfg(test)]
     album_type_requests: std::sync::Mutex<Vec<Vec<String>>>,
+    #[cfg(test)]
+    home_episode_requests: std::sync::Mutex<Vec<(Vec<String>, u64)>>,
 }
 
 impl Backend {
@@ -971,6 +1008,8 @@ impl Backend {
             player_commands: std::sync::Mutex::new(Vec::new()),
             #[cfg(test)]
             album_type_requests: std::sync::Mutex::new(Vec::new()),
+            #[cfg(test)]
+            home_episode_requests: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -1092,7 +1131,27 @@ impl Backend {
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .push((id.clone(), *offset, *generation));
         }
+        #[cfg(test)]
+        if let ApiRequest::HomeEpisodes { shows, generation } = &request {
+            self.home_episode_requests
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push((
+                    shows.iter().map(|show| show.id.clone()).collect(),
+                    *generation,
+                ));
+        }
         self.send(Command::Api(request));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_home_episode_requests(&self) -> Vec<(Vec<String>, u64)> {
+        std::mem::take(
+            &mut *self
+                .home_episode_requests
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        )
     }
 
     #[cfg(test)]
@@ -1316,6 +1375,8 @@ struct Worker {
     album_type_lookup: AlbumTypeLookup,
     /// Saved shows waiting for the streaming session to say which are audiobooks.
     audiobook_lookup: BTreeSet<String>,
+    /// Radios asked for before the streaming session was ready, by seed.
+    radio_waiting: BTreeMap<String, u64>,
     /// True while a playback grant or engine connection is in flight, so a
     /// second attempt does not pile up.
     engine_busy: bool,
@@ -1385,6 +1446,7 @@ impl Worker {
             spotsurf_queue_next: None,
             album_type_lookup: AlbumTypeLookup::default(),
             audiobook_lookup: BTreeSet::new(),
+            radio_waiting: BTreeMap::new(),
             engine_busy: false,
             search_tasks: Vec::new(),
             engine_restart_pending: false,
@@ -1913,6 +1975,24 @@ impl Worker {
                     self.audiobook_lookup.extend(uris);
                     self.start_audiobook_lookup();
                 }
+                Command::Radio { seed, generation } => {
+                    self.radio_waiting.insert(seed, generation);
+                    self.start_radio();
+                }
+                Command::RadioResolved {
+                    session_generation,
+                    seed,
+                    generation,
+                    result,
+                } => {
+                    if self.signed_in && session_generation == *self.session.borrow() {
+                        self.emit(Event::Radio {
+                            seed,
+                            generation,
+                            result,
+                        });
+                    }
+                }
                 Command::AudiobookShowsResolved {
                     session_generation,
                     audiobooks,
@@ -2382,6 +2462,7 @@ impl Worker {
         self.resume_verify = None;
         self.album_type_lookup.reset_session();
         self.audiobook_lookup.clear();
+        self.radio_waiting.clear();
         if let Some(engine) = self.engine.take() {
             engine.shutdown();
         }
@@ -2715,6 +2796,7 @@ impl Worker {
                 self.emit(Event::Playback(LocalPlayback::Ready { device_id }));
                 self.start_album_type_lookup();
                 self.start_audiobook_lookup();
+                self.start_radio();
             }
             None => {
                 self.resume = None;
@@ -2946,6 +3028,45 @@ impl Worker {
                 audiobooks,
             });
         });
+    }
+
+    /// Resolves the waiting radios once the streaming session is ready; the
+    /// Web API has no stations.
+    fn start_radio(&mut self) {
+        let Some(engine) = self.engine.clone() else {
+            return;
+        };
+        let session_generation = *self.session.borrow();
+        for (seed, generation) in std::mem::take(&mut self.radio_waiting) {
+            let engine = Arc::clone(&engine);
+            let commands = self.commands.clone();
+            tokio::spawn(async move {
+                let result = match crate::util::station_uri(&seed) {
+                    Some(station) => {
+                        match tokio::time::timeout(
+                            RADIO_TIMEOUT,
+                            session_reads::station(engine.session(), &station),
+                        )
+                        .await
+                        {
+                            Ok(Ok(tracks)) => Ok(tracks),
+                            Ok(Err(error)) => {
+                                log::warn!("radio {station} failed: {error:#}");
+                                Err("Couldn't load this radio. Try again.".to_string())
+                            }
+                            Err(_) => Err("Spotify took too long to answer. Try again.".into()),
+                        }
+                    }
+                    None => Err("There is no radio for this item.".into()),
+                };
+                let _ = commands.send(Command::RadioResolved {
+                    session_generation,
+                    seed,
+                    generation,
+                    result,
+                });
+            });
+        }
     }
 
     fn start_album_type_lookup(&mut self) {
@@ -3421,6 +3542,7 @@ fn operation_for(api: &ApiGateway, request: &ApiRequest) -> Operation {
         | ApiRequest::AlbumQueueTracks { .. }
         | ApiRequest::Show { .. }
         | ApiRequest::ShowEpisodes { .. }
+        | ApiRequest::HomeEpisodes { .. }
         | ApiRequest::Track { .. }
         | ApiRequest::Episode { .. } => Operation::Catalog,
     }
@@ -3572,8 +3694,9 @@ async fn handle(
                 result,
             }
         }
-        ApiRequest::MyPlaylists { offset } => ApiResponse::MyPlaylists {
+        ApiRequest::MyPlaylists { offset, generation } => ApiResponse::MyPlaylists {
             offset,
+            generation,
             result: routed!(my_playlists(offset, 50)),
         },
         ApiRequest::Playlist { id, generation } => ApiResponse::Playlist {
@@ -3800,6 +3923,35 @@ async fn handle(
             id,
             offset,
         },
+        ApiRequest::HomeEpisodes {
+            shows: asked,
+            generation,
+        } => {
+            let mut shows = Vec::new();
+            let mut failure = None;
+            for show in asked {
+                match routed!(show_episodes(&show.id, 0, HOME_EPISODES_PER_SHOW)) {
+                    Ok(page) => shows.push((show, page.items)),
+                    // A show that is gone answers on its own; a rate limit,
+                    // an exhausted quota or a lost sign-in would answer the
+                    // same for every show still to come, so stop asking.
+                    Err(error) => {
+                        let stop = !matches!(error, ApiError::Status { .. } | ApiError::Decode(_));
+                        failure.get_or_insert(error);
+                        if stop {
+                            break;
+                        }
+                    }
+                }
+            }
+            ApiResponse::HomeEpisodes {
+                generation,
+                result: match failure {
+                    Some(error) if shows.is_empty() => Err(error),
+                    _ => Ok(shows),
+                },
+            }
+        }
         ApiRequest::Track { id } => ApiResponse::Track {
             result: routed!(track(&id)),
             id,

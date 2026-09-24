@@ -11,8 +11,8 @@ album is playing. Your songs always play first.
 
 Above both, **Playing from** names where the playing song came from: the
 playlist, album, artist, or podcast, which opens when clicked, Liked
-Songs, or a song radio named after its song. A radio has no page of its
-own, so its name is plain text. The line shows only while a song is
+Songs, or a radio named after the song, playlist, album, or artist it is
+based on, which opens the radio's page. The line shows only while a song is
 playing from somewhere Spotify reports.
 
 These are the rules the app follows. The queue tests in `src/app.rs`
@@ -126,3 +126,16 @@ Since 0.8.0, selecting several playlist rows and choosing
 **Add to queue** preserves repeated occurrences in their selected order.
 For example, selecting B, C, B adds all three rows. A repeated click still
 counts once, and the notification reports only the rows actually added.
+
+11. **Dragging within *Playing next* reorders it, only on this computer.**
+    Neither the Web API nor librespot can reorder or insert into a live
+    queue; the only way to change one is to clear it and re-add its songs
+    in the new order, which reaches nothing but the engine actually playing
+    them. So dropping a song, dragged from elsewhere, at a position in
+    *Playing next* inserts it there, and dragging a row already in
+    *Playing next* elsewhere in the same section moves it, only while this
+    computer is the active player. Otherwise every drop still just adds to
+    the end, exactly like **Add to queue**. *Next up* is never a drop
+    target: it plays from the current context, not from a list Spotifast
+    can rewrite. While *Playing next* is empty, drop the song on the player
+    bar's Queue button instead.
