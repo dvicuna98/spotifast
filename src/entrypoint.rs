@@ -1382,7 +1382,25 @@ impl eframe::App for Shell {
                             _ => None,
                         });
             }
-            #[cfg(not(windows))]
+            #[cfg(target_os = "macos")]
+            {
+                use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                app.window_handle =
+                    frame
+                        .window_handle()
+                        .ok()
+                        .and_then(|handle| match handle.as_raw() {
+                            RawWindowHandle::AppKit(appkit) => {
+                                // SAFETY: eframe's view for this window, alive
+                                // for the frame.
+                                let view: &objc2_app_kit::NSView =
+                                    unsafe { appkit.ns_view.cast().as_ref() };
+                                view.window().map(|window| window.windowNumber() as u64)
+                            }
+                            _ => None,
+                        });
+            }
+            #[cfg(not(any(windows, target_os = "macos")))]
             let _ = frame;
             #[cfg(target_os = "macos")]
             for command in spotifast::mac_menu::drain_commands() {

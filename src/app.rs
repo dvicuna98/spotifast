@@ -412,7 +412,8 @@ pub struct App {
     pub spotsurf_launch_pending: bool,
     /// SpotSurf: the running game, while there is one.
     pub spotsurf_game: Option<crate::spotsurf::Playing>,
-    /// The main window's native handle, for the game to sit inside.
+    /// The main window's native handle, for the game to sit inside: its
+    /// HWND on Windows, its window number on macOS.
     pub window_handle: Option<u64>,
     /// The central area below the top bar, in points, as last drawn: where
     /// the running game sits.
@@ -2801,11 +2802,25 @@ impl App {
                 .map(|next| (now.uri, next)),
             _ => None,
         };
+        // Windows measures the area within the window's client area; macOS
+        // from the top left of its frame, title bar and all, which is what
+        // the window server reports to the game.
+        #[cfg(target_os = "macos")]
+        let frame = ctx.input(|input| {
+            let viewport = input.viewport();
+            viewport
+                .inner_rect
+                .zip(viewport.outer_rect)
+                .map_or(egui::Vec2::ZERO, |(inner, outer)| inner.min - outer.min)
+        });
+        #[cfg(not(target_os = "macos"))]
+        let frame = egui::Vec2::ZERO;
         let place = self
             .window_handle
             .zip(self.central_area)
             .map(|(parent, area)| {
                 let scale = ctx.pixels_per_point();
+                let area = area.translate(frame);
                 let area = [area.min.x, area.min.y, area.width(), area.height()]
                     .map(|value| (value * scale).round() as i32);
                 (parent, area)
